@@ -363,3 +363,58 @@ These variables are primarily for research and ablation studies. Changing them d
 <ParamField query="HUMAN_IN_THE_LOOP" type="boolean" default="false">
   When `true`, the agent pauses after generating each plan and waits for human approval via the Web UI or CLI before execution begins. Useful for supervised red-team engagements.
 </ParamField>
+
+---
+
+## RAG knowledge service
+
+<ParamField query="RAG_SNIPPET_LEN" type="integer" default="800">
+  Maximum character length for each knowledge snippet returned by the retrieval service.
+</ParamField>
+
+<ParamField query="RAG_TOP_K" type="integer" default="5">
+  Default number of top results returned by the RAG service when `top_k` is not specified in the tool call.
+</ParamField>
+
+---
+
+## LLM request behavior
+
+<ParamField query="LLM_TIMEOUT" type="integer" default="60">
+  Timeout in seconds for individual LLM API requests.
+</ParamField>
+
+<ParamField query="LLM_MAX_RETRIES" type="integer" default="3">
+  Maximum number of retry attempts for failed LLM API requests before the agent raises an error.
+</ParamField>
+
+---
+
+## Built-in temperature defaults
+
+Temperature values for each role are defined in `conf/config.py` in the `LLM_TEMPERATURES` dict. They are not currently overridable via environment variables — to change them, edit the dict directly.
+
+| Role | Default temperature | Notes |
+|---|---|---|
+| Planner | `0.5` | Higher value enables diverse strategy generation |
+| Executor | `0.3` | Stable, reliable tool-calling behavior |
+| Reflector | `0.2` | Precise analysis and judgment |
+| Expert Analysis | `0.7` | More creative problem-solving |
+| Summarizer | `0.2` | Stable, concise summarization |
+| Reflector Validator | `0.1` | Binary yes/no judgment needs high determinism |
+| Planner Crisis Expert | `0.4` | Balanced stability and exploration for crisis replanning |
+
+---
+
+## Logging
+
+<ParamField query="LOG_LEVEL" type="string" default="INFO">
+  Python logging level for internal service logs (not the console output controlled by `OUTPUT_MODE`).
+
+  | Value | Description |
+  |---|---|
+  | `DEBUG` | Verbose internal logging |
+  | `INFO` | Standard operational messages |
+  | `WARNING` | Warnings only |
+  | `ERROR` | Errors only |
+</ParamField>

@@ -3,7 +3,11 @@ title: "Tools Reference"
 description: "Complete reference for all MCP tools available to the LuaN1aoAgent executor."
 ---
 
-The agent communicates with all tools through the MCP (Model Control Protocol) service defined in `tools/mcp_service.py`. Every tool returns a JSON string. The executor calls these tools during the Execution phase of the P-E-R loop.
+The agent communicates with tools through two channels: most tools are MCP tools served by `tools/mcp_service.py`, while a small set of **local tools** are handled directly inside `core/executor.py` without any MCP round-trip. Every tool returns a JSON string. The executor calls these tools during the Execution phase of the P-E-R loop.
+
+<Note>
+  **Local tools** bypass the MCP transport layer and are resolved in-process by the executor. Currently only `query_causal_graph` is a local tool. All other tools listed here are MCP tools served by `tools/mcp_service.py`.
+</Note>
 
 <Warning>
   `shell_exec` and `python_exec` execute arbitrary code on the host system with no sandbox isolation. Always run the agent inside an isolated, controlled environment.
@@ -206,6 +210,50 @@ Signals that the top-level task goal has been fully achieved. Calling this tool 
 - Extracted sensitive data from a target database
 - Captured a CTF flag
 - Successfully demonstrated the existence of a critical vulnerability
+
+---
+
+### `query_causal_graph` (local tool)
+
+Queries the in-process causal graph directly without MCP transport. This zero-latency local tool lets the executor look up already-established evidence, confirmed vulnerabilities, and hypothesis state without making a network call.
+
+<Note>
+  This is a **local tool** — it does not appear in `mcp.json` and does not go through the MCP service. It is handled directly by `core/executor.py` via `_handle_local_tool`.
+</Note>
+
+<ParamField body="node_type" type="string">
+  Filter results by node type. Common values: `Evidence`, `Hypothesis`, `ConfirmedVulnerability`, `Exploit`. If omitted, all node types are returned.
+</ParamField>
+
+<ParamField body="query" type="string">
+  Substring search applied to the combined `title`, `description`, `vulnerability`, and `hypothesis` fields of each node. Case-insensitive. If omitted, all nodes matching the `node_type` filter are returned.
+</ParamField>
+
+<ParamField body="limit" type="number" default="10">
+  Maximum number of nodes to return.
+</ParamField>
+
+**Return value**
+
+```json
+{
+  "success": true,
+  "count": 2,
+  "results": [
+    {
+      "id": "vuln_mysql_weak_pw",
+      "node_type": "ConfirmedVulnerability",
+      "title": "MySQL weak password",
+      "description": "Port 3306 open; root login with empty password succeeded",
+      "confidence": 0.95,
+      "status": "confirmed",
+      "evidence": "mysql -h 10.0.0.1 -u root returned shell access",
+      "vulnerability": "Unauthorized MySQL root access"
+    }
+  ],
+  "note": "查询参数: node_type='ConfirmedVulnerability', query='mysql', limit=10"
+}
+```
 
 ---
 
