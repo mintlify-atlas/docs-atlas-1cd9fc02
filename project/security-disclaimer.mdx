@@ -1,0 +1,152 @@
+---
+title: "Security Disclaimer"
+description: "Legal terms, authorized use requirements, and safety guidance for LuaN1aoAgent."
+---
+
+<Warning>
+  **This software is intended for authorized security testing and educational purposes only.**
+
+  By downloading, installing, or using LuaN1aoAgent, you expressly acknowledge and agree to all terms on this page. If you do not agree, do not use this software.
+</Warning>
+
+## Authorized use only
+
+LuaN1aoAgent is a professional penetration testing tool. It is designed for use by security professionals, researchers, and students in controlled, authorized environments.
+
+**You must obtain explicit written consent from system owners before conducting any testing.** Unauthorized access to computer systems is illegal in virtually every jurisdiction and may result in criminal prosecution, civil liability, and severe penalties.
+
+Permitted use cases:
+
+- Testing systems you own outright.
+- Testing systems for which you hold explicit written authorization from the owner.
+- Controlled lab environments, CTF competitions, and intentionally vulnerable platforms (e.g., HackTheBox, TryHackMe, DVWA).
+- Security research with appropriate institutional approval and ethics review.
+
+---
+
+## High-privilege tools
+
+LuaN1aoAgent includes tools that execute arbitrary code with the privileges of the running process:
+
+| Tool | Capability |
+|---|---|
+| `shell_exec` | Executes arbitrary shell commands on the host system |
+| `python_exec` | Executes arbitrary Python code in the current process |
+
+<Warning>
+  Running these tools outside of an isolated environment poses a direct risk to the host system. The agent may be instructed by an LLM to execute commands that modify, delete, or exfiltrate data — even without malicious intent, due to model errors.
+</Warning>
+
+**Strong recommendation**: Run LuaN1aoAgent inside a Docker container or dedicated virtual machine that is isolated from your host filesystem and network. Do not run the agent on a machine that holds sensitive data or has access to production systems.
+
+```bash
+# Example: run in a disposable Docker container
+docker run --rm -it \
+  --network host \
+  --env-file .env \
+  python:3.11-slim \
+  bash
+```
+
+---
+
+## Do not use in production environments
+
+LuaN1aoAgent is not designed for, and must not be used against, production infrastructure without explicit written authorization and a clearly defined scope of engagement. Even with authorization, assess the risk of disruption before running the agent against live systems:
+
+- The agent may trigger rate limits, account lockouts, or intrusion detection alerts.
+- Some exploit attempts may cause unintended service disruption.
+- `shell_exec` commands may have side effects beyond the intended test scope.
+
+---
+
+## No warranties
+
+This software is provided **"AS IS"**, without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, and non-infringement.
+
+The developers make no representations about the accuracy, completeness, or reliability of the tool's outputs. Penetration testing results produced by LuaN1aoAgent should be validated by qualified security professionals before being used to make security decisions.
+
+---
+
+## Limitation of liability
+
+The developers and contributors of LuaN1aoAgent are **not responsible** for any damage, data loss, service disruption, or legal consequences resulting from the use or misuse of this tool. This includes:
+
+- Direct, indirect, incidental, or consequential damages.
+- Data loss or corruption on target or host systems.
+- Legal liability arising from unauthorized use.
+- Harm caused by acting on incorrect or incomplete tool outputs.
+
+**You assume full responsibility for your actions and their consequences.**
+
+---
+
+## Applicable laws and regulations
+
+Penetration testing activity is subject to local, national, and international law. Relevant legislation varies by jurisdiction and may include:
+
+- Computer fraud and abuse statutes (e.g., CFAA in the United States).
+- Unauthorized access laws (e.g., Computer Misuse Act in the UK).
+- Data protection regulations (e.g., GDPR in the European Union).
+- Export control laws governing security tools.
+
+It is your responsibility to understand and comply with all laws applicable to your location and the location of the systems you are testing.
+
+<Note>
+  When conducting professional penetration testing engagements, maintain a signed Rules of Engagement (RoE) document that clearly defines the scope, permitted techniques, and emergency contact procedures.
+</Note>
+
+---
+
+## Responsible disclosure
+
+If you discover a genuine vulnerability in a third-party system while using LuaN1aoAgent in an authorized engagement:
+
+<Steps>
+  <Step title="Stop and document">
+    Cease further exploitation. Document the vulnerability with sufficient detail to reproduce it: URL, request, response, and impact assessment.
+  </Step>
+  <Step title="Notify the owner">
+    Contact the system owner or their security team directly through official channels. Many organizations publish a `security.txt` file or a dedicated vulnerability disclosure program.
+  </Step>
+  <Step title="Allow reasonable remediation time">
+    Give the owner adequate time to assess and remediate the vulnerability before any public disclosure. Industry standard is 90 days, though this varies by severity and program.
+  </Step>
+  <Step title="Follow the program rules">
+    If the organization has a formal bug bounty or vulnerability disclosure program, follow its specific rules and disclosure timeline.
+  </Step>
+</Steps>
+
+---
+
+## Security issues in LuaN1aoAgent itself
+
+If you discover a security vulnerability in the LuaN1aoAgent codebase:
+
+- **Do not open a public GitHub issue** for vulnerabilities that could be exploited before a fix is available.
+- Report privately via email: [1614858685x@gmail.com](mailto:1614858685x@gmail.com)
+- Include a description of the vulnerability, steps to reproduce, and your assessment of impact.
+
+You can also open a [GitHub Security Advisory](https://github.com/SanMuzZzZz/LuaN1aoAgent/security/advisories) directly on the repository.
+
+---
+
+## License
+
+LuaN1aoAgent is licensed under the [Apache License 2.0](https://opensource.org/licenses/Apache-2.0).
+
+```
+Copyright 2025 LuaN1ao (鸾鸟) Project Contributors
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```

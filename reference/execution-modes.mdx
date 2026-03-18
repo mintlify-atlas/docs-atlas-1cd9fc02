@@ -1,0 +1,179 @@
+---
+title: "Execution Modes"
+description: "Reference for the three execution modes: default P-E-R, linear, and react."
+---
+
+LuaN1aoAgent supports three execution modes selected with `--mode`. The mode controls how task planning, execution, and reflection are orchestrated.
+
+## Mode comparison
+
+| Feature | `default` | `linear` | `react` |
+|---|---|---|---|
+| Planner | Yes — dynamic DAG | Yes — fixed sequence | No |
+| Reflector | Yes | Yes | No |
+| Causal graph | Yes (dual-graph) | Yes | No |
+| Dynamic re-planning | Yes | No | No |
+| Parallel subtask execution | Yes (topological batching) | No | No |
+| Max cycles / steps | 50 P-E-R cycles | N/A | 50 executor steps |
+| Recommended use | All real-world tasks | Simple, well-defined scenarios | Ablation / benchmarking |
+
+---
+
+## `default` — P-E-R mode
+
+The full architecture. This is the recommended mode for all real-world penetration testing tasks.
+
+### How it works
+
+<Steps>
+  <Step title="Initial planning">
+    The Planner receives the goal and generates an initial DAG (directed acyclic graph) of subtasks. Each node carries a description, dependencies, priority, and completion criteria.
+  </Step>
+  <Step title="Topological execution">
+    All subtasks with no unresolved dependencies are identified and executed in parallel as an asyncio task batch.
+  </Step>
+  <Step title="Reflection">
+    After each subtask completes, the Reflector audits the execution log, classifies the result, updates the causal graph, and extracts key facts.
+  </Step>
+  <Step title="Dynamic re-planning">
+    The Planner receives all reflection outputs (intelligence summary), the current graph state, the causal graph summary, and failure pattern analysis. It issues graph operations to add, update, or remove subtasks.
+  </Step>
+  <Step title="Loop">
+    Steps 2–4 repeat until the Planner signals `global_mission_accomplished`, all subtasks are complete, or a resource limit is hit.
+  </Step>
+</Steps>
+
+### Resource limits
+
+| Limit | Default | Environment variable |
+|---|---|---|
+| Max P-E-R cycles | 50 | `GLOBAL_MAX_CYCLES` |
+| Max token usage | 5,000,000 | `GLOBAL_MAX_TOKEN_USAGE` |
+| Max executor steps per subtask | 8 | `EXECUTOR_MAX_STEPS` |
+
+When either limit is reached the agent terminates with `termination_reason` set to `global_max_cycles_exceeded` or `global_token_limit_exceeded` in `metrics.json`.
+
+### Activate
+
+```bash
+python agent.py --goal "..." --mode default
+# or omit --mode entirely, as default is the default
+```
+
+Or set in `.env`:
+
+```bash
+EXECUTION_MODE=default
+```
+
+---
+
+## `linear` — linear task chain
+
+A simplified mode where subtasks execute in a fixed linear sequence with no dynamic branching or parallel scheduling.
+
+### How it works
+
+- The Planner generates an ordered list of subtasks at the start.
+- Subtasks execute one at a time in declaration order.
+- The Reflector still audits each subtask and updates the causal graph.
+- No mid-session re-planning occurs — the task list is fixed after the initial plan.
+
+### When to use
+
+- Simple, well-defined scenarios where the attack path is known in advance.
+- When you want to minimize LLM API calls by eliminating dynamic re-planning.
+- Debugging individual execution steps in isolation.
+
+### Activate
+
+```bash
+python agent.py --goal "..." --mode linear
+```
+
+Or set in `.env`:
+
+```bash
+EXECUTION_MODE=linear
+```
+
+---
+
+## `react` — pure ReAct
+
+A minimal single-executor loop. This mode bypasses the Planner and Reflector entirely. It is primarily used for ablation studies to measure the contribution of the P-E-R architecture.
+
+### How it works
+
+The entire goal is wrapped in a single synthetic subtask (`global_react_execution`) and passed directly to the Executor. The Executor runs a ReAct (Reason + Act) loop for up to **50 steps**.
+
+There is no task decomposition, no reflection, and no causal graph. The run is considered successful only if a flag or artifact is explicitly found and recorded during execution — completing all steps without a concrete finding is treated as failure.
+
+### When to use
+
+- Ablation benchmarking to isolate the value of Planner and Reflector components.
+- Quick exploratory runs where the overhead of planning is not justified.
+- Comparing agent performance with and without the full P-E-R architecture.
+
+<Warning>
+  ReAct mode has no task decomposition. For complex multi-step tasks the agent will often run out of steps before completing the goal. Use `default` mode for production tasks.
+</Warning>
+
+### Activate
+
+```bash
+python agent.py --goal "..." --mode react
+```
+
+Or set in `.env`:
+
+```bash
+EXECUTION_MODE=react
+```
+
+---
+
+## `--no-causal-graph` ablation
+
+This flag can be combined with any mode. When set, it disables:
+
+- The Reflector's causal graph update step.
+- The Planner's causal reasoning inputs (causal graph summary and failure pattern analysis).
+
+The dual-graph structure (task DAG + causal graph) is the primary reasoning mechanism that distinguishes LuaN1aoAgent from a plain ReAct agent. Use this flag to quantify its impact.
+
+```bash
+# Default mode without causal graph
+python agent.py --goal "..." --mode default --no-causal-graph
+
+# Or via environment variable
+NO_CAUSAL_GRAPH=true python agent.py --goal "..."
+```
+
+<Note>
+  `--no-causal-graph` affects only causal graph reasoning. The task DAG (subtask dependencies and status tracking) is unaffected.
+</Note>
+
+---
+
+## Dual-graph architecture
+
+In `default` and `linear` modes, the agent maintains two parallel graphs:
+
+<Columns cols={2}>
+  <Card title="Task DAG" icon="sitemap">
+    Directed acyclic graph of subtasks and execution steps. Tracks status (`pending`, `in_progress`, `completed`, `failed`), dependencies, and the complete execution log for each subtask.
+  </Card>
+  <Card title="Causal graph" icon="circle-nodes">
+    Knowledge graph of findings from the causal chain. Node types include `Evidence`, `Hypothesis`, `Vulnerability`, `ConfirmedVulnerability`, `Exploit`, `Credential`, `KeyFact`, and `SystemProperty`. Edges are labeled `SUPPORTS`, `CONTRADICTS`, `REVEALS`, `EXPLOITS`, or `MITIGATES`.
+  </Card>
+</Columns>
+
+The Reflector writes to the causal graph after each subtask. The Planner reads it as context for the next planning cycle. This feedback loop enables the agent to reason about accumulated evidence across subtasks and across P-E-R cycles.
+
+### Confidence propagation
+
+Hypothesis confidence is updated using non-monotonic logic:
+
+- **Necessary evidence** (`evidence_strength: "necessary"`) — a single piece of contradicting evidence sets confidence to 0.0 (FALSIFIED); confirming evidence sets it to 1.0 (CONFIRMED).
+- **Contingent evidence** (`evidence_strength: "contingent"`) — confidence accumulates via a logit-domain sigmoid transform, preventing runaway convergence to 0 or 1.

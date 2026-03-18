@@ -1,80 +1,240 @@
 ---
 title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+description: "Go from zero to running your first autonomous penetration testing task in under 10 minutes."
 ---
 
-## Get started in three steps
+<Warning>
+LuaN1aoAgent is intended **only for authorized security testing and educational purposes**. You must have explicit written permission from the system owner before testing any target. Unauthorized access is illegal.
+</Warning>
 
-Get your documentation site running locally and make your first customization.
+This guide walks you through cloning the repository, configuring your LLM provider, initializing the knowledge base, and running your first agent task against a target.
 
-### Step 1: Set up your local environment
+<Steps>
+  <Step title="Clone and install">
+    Clone the repository and install Python dependencies into a virtual environment.
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    ```bash
+    git clone https://github.com/SanMuzZzZz/LuaN1aoAgent.git
+    cd LuaN1aoAgent
+    ```
 
-### Step 2: Deploy your changes
+    <Tabs>
+      <Tab title="Linux / macOS">
+        ```bash
+        python3 -m venv venv
+        source venv/bin/activate
+        pip install -r requirements.txt
+        ```
+      </Tab>
+      <Tab title="Windows (WSL2)">
+        ```bash
+        python3 -m venv venv
+        source venv/bin/activate
+        pip install -r requirements.txt
+        ```
+      </Tab>
+    </Tabs>
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    <Tip>
+      Running inside Docker is strongly recommended because the agent uses `shell_exec` and `python_exec` — high-privilege tools that can affect your host system. See the [installation guide](/installation#docker-setup) for a container-based setup.
+    </Tip>
+  </Step>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+  <Step title="Configure your environment">
+    Copy the example configuration file and fill in your LLM credentials.
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    ```bash
+    cp .env.example .env
+    ```
 
-### Step 3: Go live
+    Open `.env` in your editor and set at minimum the following required values:
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    ```ini
+    # Required: your LLM API key
+    LLM_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
+
+    # Required: your LLM API base URL
+    LLM_API_BASE_URL=https://api.openai.com/v1
+
+    # LLM provider: "openai" or "anthropic"
+    LLM_PROVIDER=openai
+
+    # Model assignments per role (use powerful models for best results)
+    LLM_DEFAULT_MODEL=gpt-4o
+    LLM_PLANNER_MODEL=gpt-4o
+    LLM_EXECUTOR_MODEL=gpt-4o
+    LLM_REFLECTOR_MODEL=gpt-4o
+    LLM_EXPERT_ANALYSIS_MODEL=gpt-4o
+    ```
+
+    <Tabs>
+      <Tab title="OpenAI">
+        ```ini
+        LLM_PROVIDER=openai
+        LLM_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
+        LLM_API_BASE_URL=https://api.openai.com/v1
+        LLM_DEFAULT_MODEL=gpt-4o
+        LLM_PLANNER_MODEL=gpt-4o
+        LLM_EXECUTOR_MODEL=gpt-4o
+        LLM_REFLECTOR_MODEL=gpt-4o
+        ```
+      </Tab>
+      <Tab title="Anthropic (Claude)">
+        ```ini
+        LLM_PROVIDER=anthropic
+        ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxxxxxxxxxxxxx
+        ANTHROPIC_API_BASE_URL=https://api.anthropic.com/v1/messages
+        ANTHROPIC_VERSION=2023-06-01
+        ANTHROPIC_DEFAULT_MODEL=claude-sonnet-4-5
+        ANTHROPIC_PLANNER_MODEL=claude-sonnet-4-5
+        ANTHROPIC_EXECUTOR_MODEL=claude-sonnet-4-5
+        ANTHROPIC_REFLECTOR_MODEL=claude-sonnet-4-5
+        ```
+      </Tab>
+      <Tab title="DeepSeek / other OpenAI-compatible">
+        ```ini
+        LLM_PROVIDER=openai
+        LLM_API_KEY=your-api-key
+        LLM_API_BASE_URL=https://api.deepseek.com/v1
+        LLM_DEFAULT_MODEL=deepseek-chat
+        LLM_PLANNER_MODEL=deepseek-chat
+        LLM_EXECUTOR_MODEL=deepseek-chat
+        LLM_REFLECTOR_MODEL=deepseek-chat
+        ```
+      </Tab>
+    </Tabs>
+
+    You can also control console verbosity with `OUTPUT_MODE`:
+
+    ```ini
+    # "simple" | "default" | "debug"
+    OUTPUT_MODE=default
+    ```
+
+    See [Environment variables](/configuration/environment-variables) for all available settings.
+  </Step>
+
+  <Step title="Initialize the knowledge base">
+    LuaN1ao uses a RAG (Retrieval-Augmented Generation) system backed by FAISS to retrieve relevant attack payloads and techniques during testing. You must build the vector index before running the agent for the first time.
+
+    ```bash
+    # Clone PayloadsAllTheThings into the knowledge base directory
+    mkdir -p knowledge_base
+    git clone https://github.com/swisskyrepo/PayloadsAllTheThings \
+        knowledge_base/PayloadsAllTheThings
+
+    # Build the FAISS vector index (takes a few minutes)
+    cd rag
+    python -m rag_kdprepare
+    ```
+
+    <Note>
+      `rag_kdprepare` downloads embedding models and chunks all markdown files in `knowledge_base/`. This only needs to run once, or again when you add new knowledge documents. The RAG service starts automatically when you run the agent.
+    </Note>
+  </Step>
+
+  <Step title="Start the web server">
+    The web dashboard is a standalone process that must be running before or alongside the agent. It persists all task data in `luan1ao.db` and streams live updates via SSE.
+
+    ```bash
+    python -m web.server
+    ```
+
+    Open your browser and navigate to **http://localhost:8088** (default port). You should see the LuaN1aoAgent dashboard.
+
+    <Tip>
+      Keep this terminal running. The web server is persistent — you can view historical tasks and monitor live runs from the same interface.
+    </Tip>
+  </Step>
+
+  <Step title="Run your first agent task">
+    Open a **new terminal window** (keep the web server running in the first), activate your virtual environment, and launch the agent with a goal and task name.
+
+    ```bash
+    python agent.py \
+        --goal "Perform comprehensive web security testing on http://testphp.vulnweb.com" \
+        --task-name "demo_test"
+    ```
+
+    The `--goal` flag describes the penetration testing objective in natural language. The `--task-name` flag sets the identifier used for logging and the Web UI display.
+
+    To print the Web UI task URL after launch, add `--web`:
+
+    ```bash
+    python agent.py \
+        --goal "Perform comprehensive web security testing on http://testphp.vulnweb.com" \
+        --task-name "demo_test" \
+        --web
+    ```
+
+    You can also override the LLM model configuration per-run without editing `.env`:
+
+    ```bash
+    python agent.py \
+        --goal "Scan localhost for open ports and identify running services" \
+        --task-name "local_scan" \
+        --llm-planner-model gpt-4o \
+        --llm-executor-model gpt-4o-mini \
+        --output-mode debug
+    ```
+
+    <Warning>
+      Only run the agent against systems you own or have **explicit written authorization** to test. `http://testphp.vulnweb.com` is a deliberately vulnerable test site provided by Acunetix for this purpose.
+    </Warning>
+  </Step>
+
+  <Step title="View results">
+    While the agent runs, the Web UI at **http://localhost:8088** shows:
+
+    - The live task graph evolving in real-time
+    - Node-by-node execution logs with state transitions
+    - Confirmed vulnerabilities and key findings as they are discovered
+
+    When the task completes, results are also written to disk under `logs/`:
+
+    ```
+    logs/demo_test/20250204_120000/
+    ├── run_log.json          # Complete P-E-R execution log
+    ├── metrics.json          # Performance metrics and token usage
+    └── console_output.log    # Formatted console output
+    ```
+
+    All task history is persisted in `luan1ao.db`, so you can review past runs from the Web UI even after restarting the server.
+  </Step>
+</Steps>
+
+## CLI reference
+
+The most commonly used `agent.py` arguments:
+
+| Flag | Required | Description |
+|---|---|---|
+| `--goal` | Yes | The penetration testing objective in natural language |
+| `--task-name` | No | Task identifier for logging and Web UI (default: `default_task`) |
+| `--output-mode` | No | Console verbosity: `simple`, `default`, or `debug` |
+| `--web` | No | Print the Web UI task URL after launch |
+| `--web-port` | No | Web service port for display purposes (default: `8088`) |
+| `--llm-api-key` | No | Override `LLM_API_KEY` from `.env` |
+| `--llm-api-base-url` | No | Override `LLM_API_BASE_URL` from `.env` |
+| `--llm-planner-model` | No | Override the model used by the Planner |
+| `--llm-executor-model` | No | Override the model used by the Executor |
+| `--llm-reflector-model` | No | Override the model used by the Reflector |
+| `--mode` | No | Execution mode: `default` (P-E-R), `linear`, or `react` |
+| `--log-dir` | No | Custom log directory path |
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Installation" icon="download" href="/installation">
+    Virtual environments, Docker setup, and troubleshooting common issues.
+  </Card>
+  <Card title="Environment variables" icon="sliders" href="/configuration/environment-variables">
+    Full reference for all `.env` configuration options.
+  </Card>
+  <Card title="Web UI" icon="display" href="/guides/web-ui">
+    Learn how to use the dashboard for task monitoring and human-in-the-loop control.
+  </Card>
+  <Card title="P-E-R architecture" icon="arrows-spin" href="/concepts/per-architecture">
+    Understand how the three agents collaborate to reason about your target.
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

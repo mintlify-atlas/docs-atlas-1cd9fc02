@@ -1,0 +1,354 @@
+---
+title: "RAG Knowledge System"
+description: "How LuaN1aoAgent augments agent decisions with a FAISS-backed vector knowledge base built from PayloadsAllTheThings and custom security documents."
+---
+
+Penetration testing requires deep domain knowledge: which payloads bypass specific WAFs, how to extract data from blind SQL injection, what an LFI vulnerability requires for RCE. Rather than encoding all of this in a fixed system prompt, LuaN1aoAgent uses **Retrieval-Augmented Generation (RAG)** — an on-demand knowledge retrieval system that fetches the most relevant attack techniques at the moment they are needed.
+
+## Architecture Overview
+
+```
+┌────────────────────────────────────────────────────────────┐
+│                   Capability Layer                          │
+│  ┌──────────────────────┐                                   │
+│  │  RAG Knowledge       │                                   │
+│  │  Service             │                                   │
+│  │  (FastAPI, port 8081)│                                   │
+│  │                      │                                   │
+│  │  ┌───────────────┐   │  GET /retrieve_knowledge          │
+│  │  │ FAISS Index   │◄──┼──────────────────────────────     │
+│  │  │ (kb.faiss)    │   │                                   │
+│  │  └───────────────┘   │  GET /health                      │
+│  │  ┌───────────────┐   │  GET /stats                       │
+│  │  │ Doc Store     │   │                                   │
+│  │  │ (kb_store.json)│  │                                   │
+│  │  └───────────────┘   │                                   │
+│  └──────────────────────┘                                   │
+│                                                             │
+│  knowledge_base/PayloadsAllTheThings/  (Markdown sources)   │
+└────────────────────────────────────────────────────────────┘
+```
+
+The RAG system has two independent runtime components:
+1. **Offline preparation** (`rag/rag_kdprepare.py`) — indexes knowledge documents into a FAISS vector database.
+2. **Online service** (`rag/knowledge_service.py`) — serves semantic search queries over the index via a FastAPI HTTP API.
+
+---
+
+## Knowledge Base: PayloadsAllTheThings
+
+The primary knowledge source is [PayloadsAllTheThings](https://github.com/swisskyrepo/PayloadsAllTheThings), an extensive open-source collection of attack payloads, bypass techniques, and vulnerability exploitation methods.
+
+```bash
+# Clone the knowledge base into the expected directory
+mkdir -p knowledge_base
+git clone https://github.com/swisskyrepo/PayloadsAllTheThings \
+    knowledge_base/PayloadsAllTheThings
+```
+
+The knowledge service scans the entire `knowledge_base/` directory, so custom documents can be added alongside `PayloadsAllTheThings`.
+
+```python
+# From rag/rag_kdprepare.py
+def list_kb_files(root: str) -> List[Tuple[str, str]]:
+    """Walks knowledge_base/ and returns all .md and .txt files."""
+    docs: List[Tuple[str, str]] = []
+    base_dir = kb_root_dir(root)
+    for dirpath, dirnames, filenames in os.walk(base_dir):
+        for filename in filenames:
+            if filename.endswith(".md") or filename.endswith(".txt"):
+                full = os.path.join(dirpath, filename)
+                doc_id = os.path.relpath(full, root)
+                docs.append((doc_id, full))
+    return docs
+```
+
+---
+
+## FAISS Vector Index
+
+The knowledge base is encoded as a [FAISS](https://faiss.ai) `IndexIDMap2` wrapping an `IndexFlatIP` (inner product) index for cosine similarity search.
+
+```python
+# From rag/rag_kdprepare.py
+if os.path.isfile(index_fp):
+    index = faiss.read_index(index_fp)
+    print(f"[INFO] Loaded existing index, current vectors: {index.ntotal}")
+else:
+    base_index = faiss.IndexFlatIP(384)  # Inner product = cosine similarity on normalized vectors
+    index = faiss.IndexIDMap2(base_index)
+    print("[INFO] Created new empty index")
+```
+
+All vectors are L2-normalized before storage, so inner-product search is equivalent to cosine similarity:
+
+```python
+def _normalize(vecs: List[List[float]]) -> np.ndarray:
+    arr = np.array(vecs, dtype=np.float32)
+    norms = np.linalg.norm(arr, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    return arr / norms
+```
+
+**Persistence layout**:
+
+```
+rag/faiss_db/
+├── kb.faiss              # FAISS index file
+├── kb_store.json         # Document chunk store (text + metadata)
+└── faiss_manifest.json   # Per-document hash + mtime for incremental updates
+```
+
+---
+
+## Embedding Models
+
+The embedder is selected at preparation time:
+
+<Tabs>
+  <Tab title="Sentence-Transformers (preferred)">
+    Uses `all-MiniLM-L6-v2` from the local model directory `rag/models/all-MiniLM-L6-v2`.
+    Produces 384-dimensional dense vectors with strong semantic similarity for security domain text.
+
+    ```python
+    # From rag/rag_kdprepare.py
+    local_model_dir = os.path.join(root, "rag", "models", "all-MiniLM-L6-v2")
+    embedder = create_embedder(local_model_dir)
+    ```
+  </Tab>
+  <Tab title="OfflineHasherEmbedder (fallback)">
+    A deterministic hash-based embedder used when the Sentence-Transformers model is unavailable. Maps each word token to a position in a 384-dim vector via SHA-256 and normalizes.
+
+    ```python
+    class OfflineHasherEmbedder:
+        """
+        Offline hash embedding: maps token sha256 hashes to a fixed
+        dimension and normalizes. Fallback when Sentence-Transformers
+        model cannot be downloaded.
+        """
+        def __init__(self, dim: int = 384):
+            self.dim = dim
+
+        def _hash_embed(self, text: str) -> List[float]:
+            vec = [0.0] * self.dim
+            for token in re.findall(r"\b\w+\b", text.lower()):
+                d = hashlib.sha256(token.encode("utf-8")).digest()
+                idx = int.from_bytes(d[0:4], "little") % self.dim
+                sign = 1.0 if (d[4] & 1) else -1.0
+                vec[idx] += sign
+            # normalize
+            ...
+    ```
+
+    <Warning>
+      Hash embedding is a coarse approximation. Semantic similarity quality is significantly lower than Sentence-Transformers. Use only as a last resort.
+    </Warning>
+  </Tab>
+</Tabs>
+
+---
+
+## Markdown Chunking
+
+Large Markdown files are split into coherent chunks using `rag/markdown_chunker.py` before embedding. Chunk sizes are tunable via environment variables:
+
+```python
+# From rag/rag_kdprepare.py
+try:
+    env_min = int(os.getenv("RAG_MIN_CHUNK_SIZE", "100"))
+except Exception:
+    env_min = 100
+try:
+    env_max = int(os.getenv("RAG_MAX_CHUNK_SIZE", "1000"))
+except Exception:
+    env_max = 1000
+
+chunker = MarkdownChunker(min_chunk_size=env_min, max_chunk_size=env_max)
+```
+
+Each chunk is stored with metadata including its Markdown heading hierarchy level and position within the source document:
+
+```python
+doc_store[str_chunk_id] = {
+    "chunk_id": chunk_id,
+    "doc_id": doc_id,
+    "text": chunk.content,
+    "meta": {
+        "type": chunk.chunk_type,
+        "level": chunk.level,        # Markdown heading depth
+        "position": chunk.position,  # Position in source document
+        "doc_meta": meta,
+    },
+}
+```
+
+---
+
+## Knowledge Service API
+
+The knowledge service runs as a standalone FastAPI process, exposing a simple HTTP API on port 8081 (configurable via `KNOWLEDGE_SERVICE_PORT`).
+
+```python
+# From rag/knowledge_service.py
+app = FastAPI(
+    title="LuaN1ao Knowledge Service",
+    version="3.0",
+    lifespan=lifespan
+)
+```
+
+On startup, the service initializes the RAG client and builds the index:
+
+```python
+async def _initialize_knowledge_base():
+    """Initialize the unified RAG client (async-safe)."""
+    async with _rag_client_lock:
+        if _rag_client is None:
+            loop = asyncio.get_running_loop()
+            # Run sync initialization in executor to avoid blocking the event loop
+            await loop.run_in_executor(None, _initialize_knowledge_base_sync)
+```
+
+### Endpoints
+
+<AccordionGroup>
+  <Accordion title="POST /retrieve_knowledge">
+    Semantic search against the FAISS index.
+
+    ```python
+    class KnowledgeQuery(BaseModel):
+        query: str
+        top_k: int = 5
+
+    @app.post("/retrieve_knowledge")
+    async def api_retrieve_knowledge(query_params: KnowledgeQuery):
+        return await retrieve_knowledge(query_params.query, query_params.top_k)
+    ```
+
+    **Example request**:
+    ```json
+    {
+      "query": "SQL injection bypass WAF using inline comments",
+      "top_k": 5
+    }
+    ```
+
+    **Response**:
+    ```json
+    {
+      "success": true,
+      "query": "SQL injection bypass WAF using inline comments",
+      "total_results": 5,
+      "results": [
+        {
+          "text": "Inline comments /*!50000...*/ can bypass keyword filters...",
+          "meta": {
+            "type": "section",
+            "level": 2,
+            "doc_meta": {"path": "knowledge_base/PayloadsAllTheThings/SQL Injection/..."}
+          }
+        }
+      ]
+    }
+    ```
+  </Accordion>
+  <Accordion title="GET /health">
+    Returns the RAG client status and total indexed chunk count.
+
+    ```json
+    {
+      "status": "healthy",
+      "knowledge_base": {
+        "status": "healthy",
+        "total_chunks": 12483
+      }
+    }
+    ```
+  </Accordion>
+  <Accordion title="GET /stats">
+    Returns availability flag and total indexed chunk count.
+
+    ```json
+    {
+      "knowledge_base": {
+        "available": true,
+        "total_chunks": 12483
+      }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## How Agents Use the Knowledge Service
+
+During execution, the Executor can call the `retrieve_knowledge` MCP tool to inject relevant domain knowledge into its reasoning context before crafting an attack payload:
+
+```json
+{
+  "tool": "retrieve_knowledge",
+  "params": {
+    "query": "MySQL UNION-based SQL injection data extraction",
+    "top_k": 3
+  }
+}
+```
+
+The returned chunks are injected into the Executor's message history as a `user` observation, giving the agent specific, document-grounded payload examples to work from.
+
+Similarly, the `distill_knowledge` tool allows the agent to write new insights back into a custom knowledge document — enabling cross-task knowledge accumulation:
+
+```json
+{
+  "tool": "distill_knowledge",
+  "params": {
+    "title": "CVE-2024-XXXXX WAF Bypass",
+    "content": "Target WAF blocks 'UNION SELECT' but allows 'UNION/**/SELECT'...",
+    "tags": ["sqli", "waf-bypass", "inline-comment"]
+  }
+}
+```
+
+---
+
+## Building the Knowledge Base (Incremental)
+
+The preparation script supports **incremental updates** — only new or modified documents are re-vectorized:
+
+```bash
+# Build or update the FAISS index
+cd rag
+python -m rag_kdprepare
+```
+
+The manifest file (`rag/faiss_db/faiss_manifest.json`) tracks the SHA-256 hash and mtime of every indexed document. On subsequent runs:
+
+1. Documents with unchanged hashes are skipped.
+2. Modified documents have their old chunks removed from the index and replaced with new chunks.
+3. Deleted documents have all their chunks removed.
+
+```python
+# From rag/rag_kdprepare.py — incremental logic
+if not doc_manifest or doc_manifest.get("hash") != digest:
+    # New or updated — re-vectorize
+    to_upsert_docs.append((doc_id, content, meta))
+# else: hash matches, skip
+```
+
+Force-rebuild options are available for development:
+
+```bash
+# Force rebuild all documents
+python -m rag_kdprepare --force-all
+
+# Force rebuild documents matching a pattern
+python -m rag_kdprepare --force-doc=SQLInjection
+
+# Via environment variable
+RAG_FORCE_ALL=true python -m rag_kdprepare
+```
+
+<Tip>
+  Chunk size significantly affects retrieval quality. Smaller chunks (100–300 chars) produce more precise results for specific payload lookups. Larger chunks (500–1000 chars) preserve more surrounding context and work better for technique explanations. Tune with `RAG_MIN_CHUNK_SIZE` and `RAG_MAX_CHUNK_SIZE` in your `.env`.
+</Tip>

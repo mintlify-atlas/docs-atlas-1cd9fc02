@@ -1,0 +1,868 @@
+---
+title: "Tools Reference"
+description: "Complete reference for all MCP tools available to the LuaN1aoAgent executor."
+---
+
+The agent communicates with all tools through the MCP (Model Control Protocol) service defined in `tools/mcp_service.py`. Every tool returns a JSON string. The executor calls these tools during the Execution phase of the P-E-R loop.
+
+<Warning>
+  `shell_exec` and `python_exec` execute arbitrary code on the host system with no sandbox isolation. Always run the agent inside an isolated, controlled environment.
+</Warning>
+
+## Metacognitive tools
+
+These tools do not perform external actions. They force the executor into structured thinking steps, improving reasoning quality and traceability.
+
+---
+
+### `think`
+
+Records a structured reasoning trace. Use this to analyze a situation before choosing an action, or to surface a knowledge gap when stuck.
+
+<ParamField body="analysis" type="string" required>
+  A brief analysis of the current situation or context.
+</ParamField>
+
+<ParamField body="problem" type="string" required>
+  The specific problem to solve or decision to make.
+</ParamField>
+
+<ParamField body="reasoning_steps" type="string[]" required>
+  Ordered list of reasoning steps leading to the conclusion.
+</ParamField>
+
+<ParamField body="conclusion" type="string" required>
+  The final conclusion or next action derived from the reasoning.
+</ParamField>
+
+**Return value**
+
+```json
+{
+  "result": "ok",
+  "message": "结构化思考过程已记录。",
+  "recorded_thought": {
+    "type": "structured_thought",
+    "timestamp": "2024-01-01T00:00:00Z",
+    "analysis": "...",
+    "problem": "...",
+    "reasoning_steps": ["..."],
+    "conclusion": "..."
+  }
+}
+```
+
+<Note>
+  The last 50 `think` entries are retained in memory during a session. This history is not currently injected back into the executor prompt — the primary value is forcing structured deliberation before acting.
+</Note>
+
+---
+
+### `formulate_hypotheses`
+
+Systematically proposes attack hypotheses when the executor is stuck. Use this before trying a new approach to ensure the decision is explicit and traceable.
+
+<ParamField body="hypotheses" type="object[]" required>
+  List of hypothesis objects. Each object **must** contain:
+  <Expandable title="hypothesis object fields">
+    <ResponseField name="description" type="string" required>
+      Plain-language description of the hypothesis.
+    </ResponseField>
+    <ResponseField name="confidence" type="number" required>
+      Confidence score between 0.0 and 1.0.
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+**Return value**
+
+```json
+{
+  "success": true,
+  "status": "Hypotheses recorded. Now, select your highest-confidence hypothesis and design an action to test it.",
+  "hypotheses_record": {
+    "type": "hypothesis_formulation",
+    "timestamp": "2024-01-01T00:00:00Z",
+    "hypotheses": [
+      { "description": "The login form is vulnerable to time-based SQLi", "confidence": 0.75 }
+    ]
+  }
+}
+```
+
+---
+
+### `reflect_on_failure`
+
+Performs structured root-cause analysis after a tool call fails. The prompt instructs the executor to produce a corrected action immediately after calling this tool.
+
+<ParamField body="failed_action" type="object" required>
+  The full action object that failed, including `tool` and `params` keys.
+</ParamField>
+
+<ParamField body="error_message" type="string" required>
+  The exact error message returned by the failed tool.
+</ParamField>
+
+**Return value**
+
+```json
+{
+  "success": true,
+  "status": "Reflection recorded. Now, you must analyze the failure in your 'thought' process and propose a corrected action.",
+  "reflection_record": {
+    "type": "failure_reflection",
+    "timestamp": "2024-01-01T00:00:00Z",
+    "failed_action": { "tool": "http_request", "params": {} },
+    "error_message": "Connection Error"
+  }
+}
+```
+
+---
+
+### `expert_analysis`
+
+Async. Escalates a hard problem to a dedicated LLM call configured with a world-class security researcher system prompt. Use after at least two failed `retrieve_knowledge` attempts, or for problems involving unknown algorithms, complex regex bypasses, or black-box protocol reversal.
+
+<ParamField body="question" type="string" required>
+  A clear, specific question for the expert. Pseudocode is accepted.
+</ParamField>
+
+<ParamField body="context_data" type="string" default="">
+  Supporting data: code snippets, token strings, error messages, request/response samples, failed retrieval keywords.
+</ParamField>
+
+**Return value**
+
+```json
+{
+  "success": true,
+  "provider": "openai",
+  "model": "gpt-4o",
+  "report": "<detailed expert analysis>",
+  "metrics": {
+    "prompt_tokens": 1024,
+    "completion_tokens": 512,
+    "total_tokens": 1536,
+    "cost_cny": 0.02
+  }
+}
+```
+
+**Error return (connection failure)**
+
+```json
+{
+  "success": false,
+  "error_type": "CONNECTION",
+  "error": "Unable to connect to LLM service: ...",
+  "fix_suggestion": "Check network connection and LLM service status"
+}
+```
+
+<Tip>
+  Attach all relevant evidence in `context_data` — failed retrieval queries, raw HTTP responses, source code fragments — so the expert can reach a precise diagnosis without back-and-forth.
+</Tip>
+
+---
+
+## Execution and control tools
+
+---
+
+### `complete_mission`
+
+Signals that the top-level task goal has been fully achieved. Calling this tool writes a halt file to `/tmp/{task_id}.halt`, which the agent's monitor loop detects to terminate all running subtasks immediately.
+
+<Warning>
+  Call this tool only when you are 100% certain the top-level goal is met. This terminates the entire task and all parallel subtasks.
+</Warning>
+
+<ParamField body="reason" type="string" required>
+  Detailed explanation of why the mission is complete.
+</ParamField>
+
+<ParamField body="evidence" type="string" required>
+  Key evidence: shell output, database contents, captured flag, API response, etc.
+</ParamField>
+
+<ParamField body="task_id" type="string" required>
+  The current task's unique ID (available in the executor's context).
+</ParamField>
+
+**Return value**
+
+```json
+{
+  "success": true,
+  "message": "任务完成信号已发送。终止文件中已记录理由和证据。"
+}
+```
+
+**Usage scenarios**
+
+- Obtained shell access on the target system
+- Extracted sensitive data from a target database
+- Captured a CTF flag
+- Successfully demonstrated the existence of a critical vulnerability
+
+---
+
+## Network and HTTP tools
+
+---
+
+### `http_request`
+
+Async. The preferred method for all HTTP interactions. Backed by a persistent `httpx.AsyncClient` session that automatically manages cookies across requests.
+
+<Info>
+  Use `http_request` for single, exploratory requests. For repetitive testing (fuzzing, blind injection, brute force), use `python_exec` with a `requests.Session` instead.
+</Info>
+
+<ParamField body="url" type="string" required>
+  The target URL.
+</ParamField>
+
+<ParamField body="method" type="string" default="GET">
+  HTTP method: `GET`, `POST`, `PUT`, `DELETE`, `PATCH`, etc.
+</ParamField>
+
+<ParamField body="headers" type="object" default="{}">
+  Request headers as key-value pairs. To send `Cookie`, `Authorization`, or `X-Requested-With`, you must specify them here explicitly.
+</ParamField>
+
+<ParamField body="data" type="string | object">
+  Request body. Accepts a URL-encoded string or a dict of form fields.
+
+  **Content-Type resolution:**
+  - If `headers` contains `Content-Type`, it takes priority.
+  - If `data` is a dict and `Content-Type` is `application/json`, the dict is serialized as JSON.
+  - Otherwise defaults to `application/x-www-form-urlencoded`.
+</ParamField>
+
+<ParamField body="timeout" type="number" default="10">
+  Request timeout in seconds. Default tool timeout is 60 s (overridden by `TOOL_TIMEOUT_HTTP`).
+</ParamField>
+
+<ParamField body="allow_redirects" type="boolean" default="true">
+  Whether to follow HTTP redirects automatically. Accepts boolean or equivalent strings (`"true"`, `"false"`, `"1"`, `"0"`).
+</ParamField>
+
+<ParamField body="raw_mode" type="boolean" default="false">
+  When `true` (POST/PUT/PATCH only), disables URL/form encoding and sends the body exactly as provided. Use this when payloads contain characters that must not be percent-encoded (e.g., XSS angle brackets).
+</ParamField>
+
+**Return value**
+
+```json
+{
+  "request": {
+    "url": "https://example.com/login",
+    "method": "POST",
+    "headers": { "Content-Type": "application/x-www-form-urlencoded" },
+    "data": "user=admin&pass=test",
+    "raw_mode": false,
+    "prepared_body_preview": "user=admin&pass=test",
+    "encoding_mode": "form_urlencoded"
+  },
+  "response": {
+    "status_code": 200,
+    "reason": "OK",
+    "headers": { "Set-Cookie": "session=abc123" },
+    "content": "<html>...</html>",
+    "content_length": 1024,
+    "encoding": "utf-8",
+    "url": "https://example.com/dashboard",
+    "response_time_ms": 142.5
+  },
+  "metadata": {
+    "redirects": 1,
+    "final_url": "https://example.com/dashboard",
+    "elapsed_seconds": 0.143,
+    "cookies": { "session": "abc123" },
+    "follow_redirects": true,
+    "redirect_chain": [
+      { "status_code": 302, "reason": "Found", "url": "https://example.com/login", "headers": {} }
+    ]
+  }
+}
+```
+
+---
+
+### `concurrency_test`
+
+Async. Sends multiple requests simultaneously using `asyncio.gather` to test for race conditions, TOCTOU vulnerabilities, and atomic lock failures.
+
+<ParamField body="url" type="string" required>
+  Target URL.
+</ParamField>
+
+<ParamField body="method" type="string" default="GET">
+  HTTP method.
+</ParamField>
+
+<ParamField body="data" type="string" default="{}">
+  Request body as a JSON string. Parsed to a dict if valid JSON.
+</ParamField>
+
+<ParamField body="headers" type="string" default="{}">
+  Request headers as a JSON string.
+</ParamField>
+
+<ParamField body="concurrent_count" type="number" default="10">
+  Number of simultaneous requests. Maximum is **50** to prevent accidental DoS.
+</ParamField>
+
+**Return value**
+
+```json
+{
+  "success": true,
+  "total_requests": 10,
+  "successful_responses": 9,
+  "errors": 1,
+  "status_distribution": { "200": 8, "500": 1 },
+  "length_distribution": { "512": 8 },
+  "detailed_results_sample": [
+    { "index": 0, "status": 200, "length": 512 }
+  ]
+}
+```
+
+---
+
+## Shell and scripting tools
+
+---
+
+### `shell_exec`
+
+Async. Executes a shell command in a subprocess, streaming stdout+stderr in real time. Do not use this tool to call tools that are already exposed as MCP tools (e.g., `dirsearch`).
+
+<ParamField body="command" type="string" required>
+  The shell command to execute (e.g., `"ls -al /var/www"`).
+</ParamField>
+
+**Return value (success)**
+
+```json
+{ "success": true, "output": "total 48\ndrwxr-xr-x ...", "error": "" }
+```
+
+**Return value (failure)**
+
+```json
+{
+  "success": false,
+  "output": "bash: nmap: command not found",
+  "error_type": "MISSING_TOOL",
+  "message": "Command 'nmap ...' returned non-zero exit status 127.",
+  "fix_suggestion": "The command or tool does not exist. Choose an alternative from the available tools."
+}
+```
+
+**`error_type` values**
+
+| Value | Meaning |
+|---|---|
+| `RUNTIME` | Non-zero exit for a general reason |
+| `MISSING_TOOL` | Command or binary not found |
+| `SYNTAX` | Invalid argument syntax detected |
+
+---
+
+### `python_exec`
+
+Async. Executes a Python script in a thread pool executor. The script runs with a pre-populated `session` (`requests.Session`) that inherits cookies from the shared `httpx` session. Cookie changes made inside the script are synced back to the global session after execution.
+
+<Warning>
+  Do not use `python_exec` to make HTTP requests directly with `requests.get/post`. For HTTP calls, use `http_request`. Use `python_exec` only for computation, data transformation, or systematic testing loops that need `requests.Session`.
+</Warning>
+
+<ParamField body="script" type="string" required>
+  A self-contained Python script. Use `print()` to produce output. The execution environment pre-injects `requests`, `session` (a `requests.Session` with inherited cookies), and `json`.
+</ParamField>
+
+**Return value (success)**
+
+```json
+{ "success": true, "output": "admin:password123\n", "error": "" }
+```
+
+**Return value (failure)**
+
+```json
+{
+  "success": false,
+  "output": "",
+  "error_type": "SYNTAX",
+  "message": "Python Syntax Error: invalid syntax (<string>, line 3)",
+  "fix_suggestion": "Review the Python code for syntax errors."
+}
+```
+
+**`error_type` values**
+
+| Value | Meaning |
+|---|---|
+| `SYNTAX` | Python `SyntaxError` |
+| `IMPORT` | Missing module |
+| `RUNTIME` | Exception raised during execution |
+
+<Note>
+  A concurrency lock serializes `python_exec` calls to prevent `sys.stdout` patching conflicts. Parallel subtasks calling `python_exec` at the same time will queue.
+</Note>
+
+---
+
+## Knowledge tools
+
+---
+
+### `retrieve_knowledge`
+
+Async. Performs semantic search over the local knowledge base (attack techniques, WAF bypass methods, vulnerability exploitation guides, tool usage references). Queries are sent to the knowledge service HTTP API.
+
+<ParamField body="query" type="string" required>
+  Search query using specific technical terms (e.g., `"LFI path traversal"`, `"SQL injection WAF bypass"`).
+</ParamField>
+
+<ParamField body="top_k" type="number" default="5">
+  Number of top results to return. Range: 1–10.
+</ParamField>
+
+<ParamField body="service_url" type="string">
+  Knowledge service URL. Defaults to `KNOWLEDGE_SERVICE_URL` from config (typically `http://127.0.0.1:8081`).
+</ParamField>
+
+**Return value**
+
+```json
+{
+  "success": true,
+  "query": "SQL injection WAF bypass",
+  "total_results": 3,
+  "results": [
+    {
+      "id": "doc_abc123",
+      "snippet": "Use space2comment tamper script to bypass keyword filters...",
+      "score": 0.92
+    }
+  ]
+}
+```
+
+<Tip>
+  Use precise technical vocabulary. `"LFI path traversal"` retrieves far more relevant results than `"file vulnerability"`.
+</Tip>
+
+---
+
+### `distill_knowledge`
+
+Async. Writes a newly discovered insight into the permanent skill library (`AgentSkills`). Call this immediately after successfully overcoming a challenge, not just at the end of a task.
+
+<ParamField body="insight_summary" type="string" required>
+  Detailed summary of the insight. Should include: problem background, obstacles encountered, specific bypass/exploitation method (including payloads), and analysis of why the approach succeeded.
+</ParamField>
+
+**Return value**
+
+```json
+{
+  "success": true,
+  "message": "知识已成功送入蒸馏器，相应的技能文档已更新或创建。"
+}
+```
+
+---
+
+### `web_search`
+
+Async. Searches DuckDuckGo for vulnerability details, CVE disclosures, exploit techniques, or general documentation. Falls back to direct HTML scraping if the `duckduckgo-search` package is not installed.
+
+<ParamField body="query" type="string" required>
+  Search query (e.g., `"CVE-2023-1234 exploit github"`, `"SQL injection WAF bypass techniques"`).
+</ParamField>
+
+<ParamField body="num_results" type="number" default="5">
+  Number of results to return. Maximum recommended: 10.
+</ParamField>
+
+**Return value**
+
+```json
+{
+  "success": true,
+  "query": "CVE-2023-3452 exploit",
+  "results": [
+    {
+      "title": "CVE-2023-3452 - Canto RFI",
+      "body": "The Canto plugin for WordPress is vulnerable to Remote File Inclusion...",
+      "href": "https://www.exploit-db.com/exploits/51826"
+    }
+  ]
+}
+```
+
+---
+
+## Security scanner tools
+
+---
+
+### `sqlmap_tool`
+
+Async. Runs `sqlmap` to detect and exploit SQL injection vulnerabilities. Always uses `--batch --random-agent` flags for non-interactive execution.
+
+<ParamField body="url" type="string">
+  Target URL with injectable parameter (e.g., `"http://target.com/page.php?id=1"`). Either `url` or `raw_request_file` is required.
+</ParamField>
+
+<ParamField body="raw_request_file" type="string">
+  Path to a file containing a raw HTTP request (alternative to `url`). Useful when the injection point is in a POST body or a custom header.
+</ParamField>
+
+<ParamField body="tamper" type="string">
+  Comma-separated tamper script names (e.g., `"space2comment,randomcase"`). Used to bypass WAF/IDS filters.
+</ParamField>
+
+<ParamField body="level" type="number" default="1">
+  Test thoroughness level (1–5). Higher values test more injection points and payloads.
+</ParamField>
+
+<ParamField body="risk" type="number" default="1">
+  Risk of tests (1–3). Higher values include potentially destructive payloads.
+</ParamField>
+
+<ParamField body="dbms" type="string">
+  Force the backend DBMS (e.g., `"mysql"`, `"postgresql"`). Skips DBMS detection.
+</ParamField>
+
+<ParamField body="extra_args" type="string">
+  Additional sqlmap CLI arguments passed through `shlex.split` (e.g., `"--dump -T users"`).
+</ParamField>
+
+**Return value**
+
+```json
+{
+  "success": true,
+  "command": "sqlmap -u http://target.com/page.php?id=1 --batch --random-agent --level 2",
+  "stdout": "[INFO] testing connection to the target URL...\n[INFO] GET parameter 'id' is vulnerable!",
+  "stderr": "",
+  "returncode": 0
+}
+```
+
+**Timeout:** 600 seconds (configurable via `TOOL_TIMEOUT_SQLMAP`).
+
+---
+
+### `dirsearch_scan`
+
+Async. Runs `dirsearch` to enumerate web directories and files. Incompatible arguments across `dirsearch` versions are automatically filtered and replaced.
+
+<ParamField body="url" type="string" required>
+  Target URL (e.g., `"http://target.com:8080"`).
+</ParamField>
+
+<ParamField body="extensions" type="string" default="php,html,js,txt">
+  Comma-separated list of file extensions to scan for.
+</ParamField>
+
+<ParamField body="extra_args" type="string" default="">
+  Additional `dirsearch` CLI arguments. Note: `--recursive-level` and `--recursion-level` are automatically replaced with `-r` for version compatibility.
+</ParamField>
+
+**Return value**
+
+```json
+{ "success": true, "output": "[200] /admin/login.php\n[403] /backup/\n", "error": "" }
+```
+
+**Timeout:** 300 seconds (configurable via `TOOL_TIMEOUT_DIRSEARCH`).
+
+---
+
+## Exploit intelligence tools
+
+---
+
+### `search_exploit`
+
+Async. Queries NVD (National Vulnerability Database) and Exploit-DB for known vulnerabilities and public exploit code. Use this when you identify a software component and its version number.
+
+<ParamField body="keywords" type="string" required>
+  Search terms (e.g., `"canto wordpress 3.0.4"`, `"apache 2.4.49"`).
+</ParamField>
+
+<ParamField body="cve_id" type="string">
+  Optional direct CVE lookup (e.g., `"CVE-2023-3452"`).
+</ParamField>
+
+<ParamField body="max_results" type="number" default="10">
+  Maximum number of results to return.
+</ParamField>
+
+**Return value**
+
+```json
+{
+  "status": "success",
+  "query": "canto wordpress 3.0.4",
+  "sources_checked": ["NVD", "Exploit-DB"],
+  "vulnerabilities": [
+    {
+      "cve_id": "CVE-2023-3452",
+      "description": "The Canto plugin is vulnerable to Remote File Inclusion...",
+      "severity": "CRITICAL",
+      "cvss_score": 9.8,
+      "affected_versions": ["<= 3.0.4"],
+      "references": ["https://www.exploit-db.com/exploits/51826"],
+      "exploit_available": true,
+      "edb_id": "51826"
+    }
+  ],
+  "total_found": 1
+}
+```
+
+---
+
+### `view_exploit`
+
+Async. Reads the full source of an Exploit-DB exploit using `searchsploit`. Use after `search_exploit` returns an `edb_id`.
+
+<ParamField body="edb_id" type="string">
+  Exploit-DB ID (e.g., `"51826"`). Either `edb_id` or `path` is required.
+</ParamField>
+
+<ParamField body="path" type="string">
+  Direct local filesystem path to an exploit file.
+</ParamField>
+
+<ParamField body="max_lines" type="number" default="200">
+  Maximum lines of exploit code to return.
+</ParamField>
+
+**Return value**
+
+```json
+{
+  "status": "success",
+  "edb_id": "51826",
+  "title": "WordPress Plugin Canto 3.0.4 - Remote File Inclusion (RFI)",
+  "path": "/usr/share/exploitdb/exploits/php/webapps/51826.py",
+  "content": "#!/usr/bin/env python3\n...",
+  "total_lines": 87,
+  "file_type": "py",
+  "key_info": {
+    "vulnerable_endpoints": ["/wp-content/plugins/canto/includes/lib/download.php"],
+    "http_method": "GET",
+    "cve": "CVE-2023-3452"
+  }
+}
+```
+
+---
+
+## Payload server tools
+
+These tools manage a lightweight HTTP server for OOB (out-of-band) callbacks in RFI, XXE, and SSRF scenarios.
+
+---
+
+### `start_payload_server`
+
+Async. Starts a background HTTP server on a randomly chosen port in the range 18000–18999 (or a specified port). All incoming requests are logged.
+
+<ParamField body="routes" type="object[]" required>
+  Route configuration list. Each entry:
+  <Expandable title="route object fields">
+    <ResponseField name="path" type="string" required>
+      URL path (e.g., `"/wp-admin/admin.php"`).
+    </ResponseField>
+    <ResponseField name="content" type="string" required>
+      Response body content (e.g., PHP payload).
+    </ResponseField>
+    <ResponseField name="content_type" type="string">
+      Content-Type header. Defaults to `"text/plain"`.
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="port" type="number">
+  Specific port to listen on. If omitted, a free port in 18000–18999 is selected automatically.
+</ParamField>
+
+**Return value**
+
+```json
+{
+  "status": "started",
+  "server_id": "ps_a3f9c1b2",
+  "port": 18234,
+  "server_url": "http://10.0.0.5:18234",
+  "routes_configured": ["/wp-admin/admin.php"],
+  "message": "Payload server started. Use 10.0.0.5:18234 as your callback address."
+}
+```
+
+---
+
+### `stop_payload_server`
+
+Async. Stops a running payload server.
+
+<ParamField body="server_id" type="string" required>
+  The `server_id` returned by `start_payload_server`.
+</ParamField>
+
+---
+
+### `get_payload_server_logs`
+
+Async. Retrieves all requests received by a payload server. Use this to confirm OOB callbacks (SSRF/XXE).
+
+<ParamField body="server_id" type="string" required>
+  The `server_id` returned by `start_payload_server`.
+</ParamField>
+
+**Return value**
+
+```json
+{
+  "status": "success",
+  "server_id": "ps_a3f9c1b2",
+  "request_count": 1,
+  "requests": [
+    {
+      "timestamp": "2024-01-01T12:00:01.000000",
+      "client": "192.168.1.10",
+      "request": "GET /wp-admin/admin.php",
+      "headers": { "Host": "10.0.0.5:18234" }
+    }
+  ]
+}
+```
+
+---
+
+### `list_payload_servers`
+
+Async. Lists all currently active payload servers.
+
+---
+
+## Nuclei scanner tools
+
+---
+
+### `nuclei_scan`
+
+Async. Runs Nuclei template-based vulnerability scanning against a target.
+
+<Warning>
+  A full scan without template filters can take 2–3 minutes. Always specify `templates`, `tags`, or `severity` to limit scan scope.
+</Warning>
+
+<ParamField body="target" type="string" required>
+  Target URL (e.g., `"http://localhost:8080"`).
+</ParamField>
+
+<ParamField body="templates" type="string">
+  Template path or name (e.g., `"cves/2023/CVE-2023-3452.yaml"` or `"wordpress"`).
+</ParamField>
+
+<ParamField body="severity" type="string">
+  Comma-separated severity filter: `critical`, `high`, `medium`, `low`, `info`.
+</ParamField>
+
+<ParamField body="tags" type="string">
+  Comma-separated tag filter (e.g., `"cve,wordpress,rce"`).
+</ParamField>
+
+<ParamField body="timeout" type="number" default="180">
+  Total scan timeout in seconds.
+</ParamField>
+
+<ParamField body="rate_limit" type="number" default="150">
+  Maximum requests per second.
+</ParamField>
+
+<ParamField body="concurrency" type="number" default="25">
+  Number of concurrent template executions.
+</ParamField>
+
+**Return value**
+
+```json
+{
+  "status": "success",
+  "target": "http://localhost:8080",
+  "findings": [
+    {
+      "template_id": "CVE-2023-3452",
+      "name": "Canto Plugin RFI",
+      "severity": "critical",
+      "type": "http",
+      "matched_at": "http://localhost:8080/wp-content/plugins/canto/...",
+      "description": "Remote File Inclusion in Canto plugin <= 3.0.4",
+      "cve_id": ["CVE-2023-3452"],
+      "reference": ["https://www.exploit-db.com/exploits/51826"],
+      "extracted": [],
+      "curl_command": "curl -X GET ..."
+    }
+  ],
+  "summary": {
+    "total_findings": 1,
+    "by_severity": { "critical": 1 }
+  }
+}
+```
+
+---
+
+### `nuclei_list_templates`
+
+Async. Lists available Nuclei templates, with optional filtering by search terms, tags, and severity.
+
+<ParamField body="search" type="string">
+  Keyword filter (e.g., `"wordpress canto"`, `"CVE-2023"`).
+</ParamField>
+
+<ParamField body="tags" type="string">
+  Tag filter.
+</ParamField>
+
+<ParamField body="severity" type="string">
+  Severity filter.
+</ParamField>
+
+<ParamField body="limit" type="number" default="20">
+  Maximum number of templates to return.
+</ParamField>
+
+---
+
+## Tool timeouts
+
+Default tool-level timeouts are configured in `conf/config.py` and can be overridden with environment variables.
+
+| Tool | Default timeout | Environment variable |
+|---|---|---|
+| `sqlmap_tool` | 600 s | `TOOL_TIMEOUT_SQLMAP` |
+| `nuclei_scan` | 300 s | `TOOL_TIMEOUT_NUCLEI` |
+| `dirsearch_scan` | 300 s | `TOOL_TIMEOUT_DIRSEARCH` |
+| `python_exec` | 300 s | `TOOL_TIMEOUT_PYTHON` |
+| `concurrency_test` | 180 s | `TOOL_TIMEOUT_CONCURRENCY` |
+| `shell_exec` | 120 s | `TOOL_TIMEOUT_SHELL` |
+| `http_request` | 60 s | `TOOL_TIMEOUT_HTTP` |
+| `expert_analysis` | 60 s | `TOOL_TIMEOUT_EXPERT` |
+| `web_search` | 30 s | `TOOL_TIMEOUT_WEB_SEARCH` |
+| `think` / `formulate_hypotheses` / `reflect_on_failure` | 30 s | `TOOL_TIMEOUT_THINK` etc. |
+| `retrieve_knowledge` | 15 s | `TOOL_TIMEOUT_RETRIEVE` |

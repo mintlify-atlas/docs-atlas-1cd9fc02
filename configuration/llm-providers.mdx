@@ -1,0 +1,216 @@
+---
+title: "LLM Providers"
+description: "Configure OpenAI-compatible APIs, Anthropic Claude, per-role models, temperatures, and thinking mode."
+---
+
+LuaN1aoAgent supports two LLM backends: any OpenAI-compatible API (including DeepSeek, local proxies, etc.) and the Anthropic Claude native API. The backend is selected with `LLM_PROVIDER`.
+
+## Provider selection
+
+```bash .env
+# "openai" (default) or "anthropic"
+LLM_PROVIDER=openai
+```
+
+---
+
+## OpenAI and compatible APIs
+
+Set `LLM_PROVIDER=openai` (or omit it — this is the default). The client sends requests to `LLM_API_BASE_URL` using the OpenAI `/chat/completions` format.
+
+<Tabs>
+  <Tab title="OpenAI">
+    ```bash .env
+    LLM_PROVIDER=openai
+    LLM_API_KEY=sk-...
+    LLM_API_BASE_URL=https://api.openai.com/v1
+
+    LLM_DEFAULT_MODEL=gpt-4o
+    LLM_PLANNER_MODEL=gpt-4o
+    LLM_EXECUTOR_MODEL=gpt-4o
+    LLM_REFLECTOR_MODEL=gpt-4o
+    LLM_EXPERT_MODEL=gpt-4o
+    ```
+  </Tab>
+  <Tab title="DeepSeek">
+    ```bash .env
+    LLM_PROVIDER=openai
+    LLM_API_KEY=sk-...
+    LLM_API_BASE_URL=https://api.deepseek.com/v1
+
+    # DeepSeek V3 was used in the published benchmark
+    LLM_DEFAULT_MODEL=deepseek-chat
+    LLM_PLANNER_MODEL=deepseek-chat
+    LLM_EXECUTOR_MODEL=deepseek-chat
+    LLM_REFLECTOR_MODEL=deepseek-chat
+    LLM_EXPERT_MODEL=deepseek-chat
+    ```
+  </Tab>
+  <Tab title="Local proxy / vLLM">
+    ```bash .env
+    LLM_PROVIDER=openai
+    LLM_API_KEY=not-used
+    LLM_API_BASE_URL=http://localhost:8000/v1
+
+    LLM_DEFAULT_MODEL=your-local-model-name
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+## Anthropic Claude
+
+Set `LLM_PROVIDER=anthropic`. The client switches to the Anthropic Messages API and uses the `ANTHROPIC_*` family of variables.
+
+```bash .env
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_API_BASE_URL=https://api.anthropic.com/v1/messages
+ANTHROPIC_VERSION=2023-06-01
+
+ANTHROPIC_DEFAULT_MODEL=claude-sonnet-4-5
+ANTHROPIC_PLANNER_MODEL=claude-sonnet-4-5
+ANTHROPIC_EXECUTOR_MODEL=claude-sonnet-4-5
+ANTHROPIC_REFLECTOR_MODEL=claude-sonnet-4-5
+ANTHROPIC_EXPERT_MODEL=claude-sonnet-4-5
+```
+
+<Note>
+  When `LLM_PROVIDER=anthropic`, the `LLM_*` model variables are ignored. You must configure models via the `ANTHROPIC_*` model variables.
+</Note>
+
+<Note>
+  `ANTHROPIC_API_KEY` defaults to the value of `LLM_API_KEY` when not set explicitly. You only need to add it if the two keys differ.
+</Note>
+
+---
+
+## Per-role model configuration
+
+The agent runs four distinct LLM roles. Assigning separate models per role lets you balance capability, speed, and cost.
+
+| Role | Variable (OpenAI) | Variable (Anthropic) | Recommended model |
+|---|---|---|---|
+| Planner | `LLM_PLANNER_MODEL` | `ANTHROPIC_PLANNER_MODEL` | Strongest available — builds the full attack task graph |
+| Executor | `LLM_EXECUTOR_MODEL` | `ANTHROPIC_EXECUTOR_MODEL` | Fast, reliable — executes tools step-by-step |
+| Reflector | `LLM_REFLECTOR_MODEL` | `ANTHROPIC_REFLECTOR_MODEL` | Deterministic — performs causal graph analysis |
+| Expert Analysis | `LLM_EXPERT_MODEL` | `ANTHROPIC_EXPERT_MODEL` | Strong reasoning — handles escalated hard problems |
+
+### Example: split model configuration
+
+```bash .env
+# Use the strongest model for planning and expert analysis
+LLM_PLANNER_MODEL=gpt-4o
+LLM_EXPERT_MODEL=gpt-4o
+
+# Use a faster model for high-frequency execution steps
+LLM_EXECUTOR_MODEL=gpt-4o-mini
+LLM_REFLECTOR_MODEL=gpt-4o-mini
+```
+
+---
+
+## Temperature settings
+
+Temperature values are hard-coded per role in `conf/config.py` and represent the recommended defaults. They can be tuned directly in the source if your use case requires it.
+
+| Role | Default temperature | Rationale |
+|---|---|---|
+| `default` | `0.3` | Balanced fallback |
+| `planner` | `0.5` | Some creativity needed for diverse attack strategies |
+| `executor` | `0.3` | Stable, reliable tool calls |
+| `reflector` | `0.2` | Precise causal analysis |
+| `expert_analysis` | `0.7` | Creative problem-solving for hard escalations |
+| `summarizer` | `0.2` | Stable, concise output |
+| `reflector_validator` | `0.1` | High determinism for binary yes/no judgements |
+| `planner_crisis_expert` | `0.4` | Balance between stability and exploration during crisis re-planning |
+
+<Warning>
+  Temperature is not configurable via environment variable. Edit `LLM_TEMPERATURES` in `conf/config.py` to change these values.
+</Warning>
+
+---
+
+## Thinking mode
+
+Thinking mode passes `extra_body: {thinking: "hidden|visible"}` in the request payload, allowing providers that support extended reasoning (e.g., DeepSeek R1) to expose their chain-of-thought.
+
+<Steps>
+  <Step title="Enable extra_body">
+    ```bash .env
+    LLM_EXTRA_BODY_ENABLED=true
+    ```
+  </Step>
+  <Step title="Set the thinking mode">
+    ```bash .env
+    # Apply to all roles at once
+    LLM_DEFAULT_THINKING=hidden
+
+    # Or override individual roles
+    LLM_PLANNER_THINKING=visible
+    LLM_EXECUTOR_THINKING=off
+    ```
+  </Step>
+</Steps>
+
+| Value | Effect |
+|---|---|
+| `off` | No `extra_body` injected (default) |
+| `hidden` | Reasoning enabled; chain-of-thought not returned in the response |
+| `visible` | Reasoning enabled; chain-of-thought returned (e.g., in `reasoning_content`) |
+
+<Note>
+  Thinking mode is only supported by providers that accept `extra_body`. It is ignored when `LLM_PROVIDER=anthropic`, which uses the native Anthropic API format.
+</Note>
+
+---
+
+## Fallback API key
+
+The agent automatically switches to a fallback key on `429` rate-limit errors, then reverts to the primary key for subsequent requests.
+
+```bash .env
+# OpenAI-compatible fallback
+LLM_FALLBACK_API_KEY=sk-backup-...
+
+# Anthropic fallback
+ANTHROPIC_FALLBACK_API_KEY=sk-ant-backup-...
+```
+
+If no fallback key is configured, the client uses exponential back-off (10 s, 20 s, 40 s … up to 120 s) with up to 10 retries before raising an error.
+
+---
+
+## Model recommendations
+
+<AccordionGroup>
+  <Accordion title="DeepSeek V3 (benchmark model)">
+    DeepSeek V3 (`deepseek-chat`) was the primary model used in the published benchmark evaluation. It offers a strong price-to-performance ratio for penetration testing workloads.
+
+    ```bash .env
+    LLM_PROVIDER=openai
+    LLM_API_BASE_URL=https://api.deepseek.com/v1
+    LLM_API_KEY=sk-...
+    LLM_DEFAULT_MODEL=deepseek-chat
+    ```
+  </Accordion>
+  <Accordion title="GPT-4o">
+    GPT-4o provides strong reasoning and reliable JSON-mode output. It is a safe default for all roles.
+
+    ```bash .env
+    LLM_PROVIDER=openai
+    LLM_API_KEY=sk-...
+    LLM_DEFAULT_MODEL=gpt-4o
+    ```
+  </Accordion>
+  <Accordion title="Claude 3.5 Sonnet">
+    Claude 3.5 Sonnet is a strong all-round model for both planning and execution. Use `LLM_PROVIDER=anthropic` with the Anthropic API, or point `LLM_API_BASE_URL` at an OpenAI-compatible Claude proxy.
+
+    ```bash .env
+    LLM_PROVIDER=anthropic
+    ANTHROPIC_API_KEY=sk-ant-...
+    ANTHROPIC_DEFAULT_MODEL=claude-3-5-sonnet-20240620
+    ```
+  </Accordion>
+</AccordionGroup>

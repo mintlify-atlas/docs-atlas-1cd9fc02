@@ -1,0 +1,231 @@
+---
+title: "Docker Deployment"
+description: "Run LuaN1aoAgent in a Docker container to isolate shell_exec and python_exec tool calls from your host system."
+---
+
+Running LuaN1aoAgent inside Docker is **strongly recommended**. The agent includes high-privilege tools — `shell_exec` and `python_exec` — that execute arbitrary commands and code. A container boundary prevents these tools from affecting your host system if a task goes wrong or if a target redirects payloads back at the testing system.
+
+<Warning>
+LuaN1aoAgent is intended for authorized security testing only. Do not run any task against a target without explicit written permission from the system owner. Docker isolation protects your host, not your legal standing.
+</Warning>
+
+## Base Dockerfile
+
+The following Dockerfile builds a Python 3.11 image with a curated set of penetration testing tools pre-installed:
+
+```dockerfile
+FROM python:3.11-slim-bookworm
+
+# Install OS-level security tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Network scanning
+    nmap \
+    # DNS / network utilities
+    dnsutils \
+    iputils-ping \
+    curl \
+    wget \
+    # Build tools (for compiling Python packages)
+    gcc \
+    build-essential \
+    libssl-dev \
+    libffi-dev \
+    python3-dev \
+    # Git (for cloning knowledge bases)
+    git \
+    # SQLite (for luan1ao.db)
+    sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python-based security tools
+RUN pip install --no-cache-dir \
+    sqlmap \
+    dirsearch \
+    impacket
+
+# Install gobuster (Go binary)
+RUN wget -q https://github.com/OJ/gobuster/releases/download/v3.6.0/gobuster_Linux_x86_64.tar.gz \
+    -O /tmp/gobuster.tar.gz \
+    && tar xzf /tmp/gobuster.tar.gz -C /usr/local/bin gobuster \
+    && rm /tmp/gobuster.tar.gz
+
+WORKDIR /app
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy project source
+COPY . .
+
+# Expose web UI and knowledge service ports
+EXPOSE 8088 8081
+
+# Default command: start the web server
+CMD ["python", "-m", "web.server"]
+```
+
+## Volume mounts
+
+Mount the following directories to persist data and inject secrets outside the image:
+
+| Host path | Container path | Purpose |
+|---|---|---|
+| `./knowledge_base` | `/app/knowledge_base` | RAG knowledge base (built with `rag_kdprepare`) |
+| `./rag/faiss_db` | `/app/rag/faiss_db` | FAISS vector index (persist between rebuilds) |
+| `./logs` | `/app/logs` | Task run logs and metrics |
+| `./luan1ao.db` | `/app/luan1ao.db` | SQLite task database |
+| `./.env` | `/app/.env` | LLM API keys and configuration |
+
+## Docker Compose
+
+The recommended setup uses Compose to run the web server and knowledge service as named services, with the agent invoked on demand:
+
+```yaml
+services:
+  web:
+    build: .
+    command: python -m web.server
+    ports:
+      - "8088:8088"
+    volumes:
+      - ./knowledge_base:/app/knowledge_base
+      - ./rag/faiss_db:/app/rag/faiss_db
+      - ./logs:/app/logs
+      - ./luan1ao.db:/app/luan1ao.db
+      - ./.env:/app/.env:ro
+    environment:
+      - WEB_HOST=0.0.0.0
+      - WEB_PORT=8088
+    restart: unless-stopped
+
+  knowledge:
+    build: .
+    command: python -m uvicorn rag.knowledge_service:app --host 0.0.0.0 --port 8081
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./knowledge_base:/app/knowledge_base
+      - ./rag/faiss_db:/app/rag/faiss_db
+      - ./.env:/app/.env:ro
+    environment:
+      - KNOWLEDGE_SERVICE_PORT=8081
+      - KNOWLEDGE_SERVICE_HOST=0.0.0.0
+    restart: unless-stopped
+```
+
+### Starting the stack
+
+```bash
+# Start the web server and knowledge service
+docker compose up -d
+
+# Verify both services are healthy
+docker compose ps
+curl http://localhost:8081/health
+curl http://localhost:8088
+```
+
+### Running an agent task
+
+Agent tasks can be launched in two ways:
+
+<Tabs>
+  <Tab title="Via the Web UI">
+    Open **http://localhost:8088**, click **New Task**, fill in the goal, and click **Start**. The web server spawns the agent as a subprocess inside the `web` container.
+  </Tab>
+  <Tab title="Via docker exec">
+    ```bash
+    docker compose exec web python agent.py \
+        --goal "Test http://target.internal for SQL injection vulnerabilities" \
+        --task-name "sql_test" \
+        --web
+    ```
+
+    This runs the agent inside the running `web` container, sharing the same mounts and environment.
+  </Tab>
+  <Tab title="Via docker run (one-off)">
+    ```bash
+    docker run --rm \
+      -v $(pwd)/knowledge_base:/app/knowledge_base \
+      -v $(pwd)/rag/faiss_db:/app/rag/faiss_db \
+      -v $(pwd)/logs:/app/logs \
+      -v $(pwd)/luan1ao.db:/app/luan1ao.db \
+      -v $(pwd)/.env:/app/.env:ro \
+      luan1ao-agent \
+      python agent.py \
+        --goal "Perform web security testing on http://testphp.vulnweb.com" \
+        --task-name "one_off_test"
+    ```
+  </Tab>
+</Tabs>
+
+## Network isolation considerations
+
+By default, Docker containers use a bridge network (`luan1ao_default` when using Compose). The agent can reach any host reachable from that bridge, including:
+
+- Other containers in the same Compose project
+- Your host machine (via the Docker bridge gateway IP, typically `172.17.0.1`)
+- External internet hosts
+
+### Testing against an isolated target
+
+For lab environments, create a dedicated network that includes both the agent container and the target container:
+
+```yaml
+networks:
+  pentest-lab:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.10.0.0/24
+
+services:
+  web:
+    # ... existing config ...
+    networks:
+      - pentest-lab
+
+  target:
+    image: webgoat/webgoat
+    networks:
+      pentest-lab:
+        ipv4_address: 10.10.0.100
+```
+
+The agent can then target `http://10.10.0.100:8080` while remaining isolated from other networks.
+
+### Restricting outbound internet access
+
+If the target is entirely internal and you want to prevent the agent from making outbound requests (e.g., to `shell_exec` a reverse shell callback), use Docker's `internal` network flag:
+
+```yaml
+networks:
+  pentest-lab:
+    driver: bridge
+    internal: true   # no external routing
+```
+
+<Note>
+An `internal` network blocks all outbound traffic, including LLM API calls. You will need to proxy API traffic separately or use a local LLM if you go fully internal.
+</Note>
+
+## Security checklist
+
+<AccordionGroup>
+  <Accordion title="Pre-deployment checklist">
+    - [ ] `.env` file is mounted read-only (`:ro`) and never baked into the image
+    - [ ] `luan1ao.db`, `logs/`, and `knowledge_base/` are on host-mounted volumes (not container-internal)
+    - [ ] The target is authorized for penetration testing in writing
+    - [ ] The web UI port (`8088`) is not exposed to untrusted networks
+    - [ ] You have verified the scope of the goal string before launching a task
+  </Accordion>
+
+  <Accordion title="Do not do these things">
+    - Do not use `--privileged` or `--cap-add=SYS_ADMIN` unless you specifically need them for a tool
+    - Do not run the container as `root` in production — add a non-root `USER` directive to the Dockerfile
+    - Do not expose port `8081` (knowledge service) externally; it has no authentication
+    - Do not commit `.env` to version control
+    - Do not run agent tasks against targets you do not own or have written authorization to test
+  </Accordion>
+</AccordionGroup>

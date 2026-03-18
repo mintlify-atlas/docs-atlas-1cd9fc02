@@ -1,0 +1,179 @@
+---
+title: "CLI Reference"
+description: "Complete command-line interface reference for agent.py."
+---
+
+All agent runs are launched via `agent.py`. The entry point is the `main()` coroutine driven by Python's `argparse`.
+
+```bash
+python agent.py --goal "<task goal>" [options]
+```
+
+<Warning>
+  `python_exec` and `shell_exec` allow the agent to execute arbitrary code and shell commands. **Always run the agent inside an isolated, controlled environment.** No sandbox isolation is provided.
+</Warning>
+
+## Required arguments
+
+<ParamField body="--goal" type="string" required>
+  The penetration testing goal. This is the top-level instruction given to the Planner. Be specific — vague goals produce vague plans.
+
+  ```bash
+  --goal "Find and exploit SQL injection vulnerabilities on http://target.com"
+  ```
+</ParamField>
+
+## Task and logging arguments
+
+<ParamField body="--task-name" type="string" default="default_task">
+  A human-readable name for this task. Used as the first path segment of the log directory and for display in the Web UI.
+</ParamField>
+
+<ParamField body="--log-dir" type="string">
+  Override the log directory path. If not provided, logs are written to:
+
+  ```
+  logs/{task-name}/{timestamp}/
+  ```
+
+  where `timestamp` is formatted as `YYYYMMDD_HHMMSS`.
+</ParamField>
+
+<ParamField body="--output-mode" type="string" default="default">
+  Controls console verbosity. Allowed values:
+
+  | Value | Description |
+  |---|---|
+  | `simple` | Minimal output — task graph and key findings only |
+  | `default` | Standard output including plan summaries and reflection results |
+  | `debug` | Full output including raw LLM prompts/responses and causal graph state |
+
+  Can also be set via the `OUTPUT_MODE` environment variable.
+</ParamField>
+
+## LLM configuration arguments
+
+These arguments override the corresponding `conf/config.py` settings and environment variables at runtime.
+
+<ParamField body="--llm-api-base-url" type="string">
+  Override the LLM API base URL. Useful for switching to a different provider endpoint without modifying `.env`.
+
+  ```bash
+  --llm-api-base-url https://api.deepseek.com/v1
+  ```
+</ParamField>
+
+<ParamField body="--llm-api-key" type="string">
+  Override the LLM API key.
+</ParamField>
+
+<ParamField body="--llm-planner-model" type="string">
+  Model identifier for the **Planner** role. The Planner generates and updates the DAG task plan. Defaults to `LLM_PLANNER_MODEL` env var or `gpt-4o`.
+</ParamField>
+
+<ParamField body="--llm-executor-model" type="string">
+  Model identifier for the **Executor** role. The Executor runs the ReAct tool-calling loop for each subtask. Defaults to `LLM_EXECUTOR_MODEL` env var or `gpt-4o`.
+</ParamField>
+
+<ParamField body="--llm-reflector-model" type="string">
+  Model identifier for the **Reflector** role. The Reflector audits subtask execution and updates the causal graph. Defaults to `LLM_REFLECTOR_MODEL` env var or `gpt-4o`.
+</ParamField>
+
+<ParamField body="--llm-default-model" type="string">
+  Default model for any role without a specific override. Defaults to `LLM_DEFAULT_MODEL` env var or `gpt-4o`.
+</ParamField>
+
+<ParamField body="--llm-expert-model" type="string">
+  Model identifier for the **Expert Analysis** role (used by the `expert_analysis` tool). This role uses a higher temperature (0.7) for more creative analysis. Defaults to `LLM_EXPERT_MODEL` env var or `gpt-4o`.
+</ParamField>
+
+## Execution mode arguments
+
+<ParamField body="--mode" type="string" default="default">
+  Selects the execution architecture. Allowed values: `default`, `linear`, `react`.
+
+  See [Execution Modes](/reference/execution-modes) for a full comparison.
+</ParamField>
+
+<ParamField body="--no-causal-graph" type="boolean">
+  Flag (no value). When present, disables the Reflector's causal graph updates and the Planner's causal reasoning. Used for ablation studies to benchmark the value of dual-graph reasoning.
+
+  Sets `conf.config.NO_CAUSAL_GRAPH = True` at runtime.
+</ParamField>
+
+## Web UI arguments
+
+<ParamField body="--web" type="boolean">
+  Flag (no value). When present, prints the Web UI URL to the console on startup. The Web UI itself runs as a separate process (`python web/server.py`) and is not started by this flag.
+</ParamField>
+
+<ParamField body="--web-port" type="number" default="8088">
+  Port number to include in the printed Web UI URL. This is display-only — it does not start or configure the Web service.
+</ParamField>
+
+<ParamField body="--op-id" type="string">
+  Specify an operation ID for this task. When provided by the Web UI, this links the agent run to an existing session record in the SQLite database. If omitted, a new ID is generated as `task_{timestamp}_{uuid_prefix}`.
+</ParamField>
+
+## Example commands
+
+<CodeGroup>
+
+```bash Basic web security test
+python agent.py \
+  --goal "Perform comprehensive web security testing on http://testphp.vulnweb.com" \
+  --task-name "web_test"
+```
+
+```bash CTF challenge with debug output
+python agent.py \
+  --goal "Solve the CTF challenge at http://challenge.example.com:8080" \
+  --task-name "ctf_challenge" \
+  --output-mode debug \
+  --mode default
+```
+
+```bash Override LLM provider
+python agent.py \
+  --goal "Test the target application for injection vulnerabilities" \
+  --task-name "injection_test" \
+  --llm-api-base-url https://api.deepseek.com/v1 \
+  --llm-planner-model deepseek-chat \
+  --llm-executor-model deepseek-chat
+```
+
+```bash Pure ReAct ablation mode
+python agent.py \
+  --goal "Find SQL injection vulnerabilities on http://target.com" \
+  --task-name "sqli_test" \
+  --mode react
+```
+
+```bash Disable causal graph (ablation)
+python agent.py \
+  --goal "Test web application security" \
+  --task-name "no_causal_test" \
+  --no-causal-graph
+```
+
+</CodeGroup>
+
+## Environment variables
+
+All LLM and execution settings can be provided via environment variables in a `.env` file. CLI arguments take precedence over environment variables.
+
+| Variable | CLI equivalent | Description |
+|---|---|---|
+| `LLM_API_BASE_URL` | `--llm-api-base-url` | LLM API endpoint |
+| `LLM_API_KEY` | `--llm-api-key` | API key |
+| `LLM_PLANNER_MODEL` | `--llm-planner-model` | Planner model |
+| `LLM_EXECUTOR_MODEL` | `--llm-executor-model` | Executor model |
+| `LLM_REFLECTOR_MODEL` | `--llm-reflector-model` | Reflector model |
+| `LLM_DEFAULT_MODEL` | `--llm-default-model` | Default model |
+| `LLM_EXPERT_MODEL` | `--llm-expert-model` | Expert analysis model |
+| `EXECUTION_MODE` | `--mode` | Execution mode |
+| `NO_CAUSAL_GRAPH` | `--no-causal-graph` | Disable causal graph |
+| `OUTPUT_MODE` | `--output-mode` | Console verbosity |
+| `WEB_PORT` | `--web-port` | Web UI port |
+| `GLOBAL_MAX_CYCLES` | — | Max P-E-R loop cycles (default: 50) |
+| `GLOBAL_MAX_TOKEN_USAGE` | — | Token circuit breaker (default: 5,000,000) |

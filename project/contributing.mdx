@@ -1,0 +1,355 @@
+---
+title: "Contributing"
+description: "How to report bugs, suggest features, submit code, and improve documentation for LuaN1aoAgent."
+---
+
+Contributions of all kinds are welcome — bug reports, feature suggestions, code, documentation, and experience sharing.
+
+## Ways to contribute
+
+<CardGroup cols={2}>
+  <Card title="Report a bug" icon="bug" href="https://github.com/SanMuzZzZz/LuaN1aoAgent/issues">
+    Open an issue on GitHub with a description, reproduction steps, and environment info.
+  </Card>
+  <Card title="Suggest a feature" icon="lightbulb" href="https://github.com/SanMuzZzZz/LuaN1aoAgent/issues">
+    Open an issue describing the feature, its motivation, and how it fits the project's scope.
+  </Card>
+  <Card title="Submit code" icon="code" href="https://github.com/SanMuzZzZz/LuaN1aoAgent">
+    Fork the repository, create a branch, and open a Pull Request.
+  </Card>
+  <Card title="Share experience" icon="messages" href="https://github.com/SanMuzZzZz/LuaN1aoAgent/discussions">
+    Share usage tips, attack patterns, and deployment learnings in GitHub Discussions.
+  </Card>
+</CardGroup>
+
+---
+
+## Reporting bugs
+
+Before opening a new issue:
+
+1. Search existing issues to confirm the bug has not already been reported.
+2. Verify the problem exists on the latest version.
+3. Collect logs from `logs/TASK-NAME/TIMESTAMP/run_log.json`.
+
+Use this template when opening an issue:
+
+```markdown
+**Problem description**
+Brief description of the issue.
+
+**Steps to reproduce**
+1. Run command '...'
+2. Set configuration '...'
+3. Observe error '...'
+
+**Expected behavior**
+What you expected to happen.
+
+**Actual behavior**
+What actually happened.
+
+**Environment**
+- OS: [e.g. Ubuntu 22.04]
+- Python version: [e.g. 3.11.4]
+- LuaN1ao version: [e.g. v0.6.0]
+- LLM provider: [e.g. DeepSeek V3.2]
+
+**Logs**
+(Paste relevant log output here)
+
+**Additional context**
+Any other information that helps diagnose the issue.
+```
+
+---
+
+## Development setup
+
+<Steps>
+  <Step title="Fork and clone">
+    Fork the repository on GitHub, then clone your fork:
+
+    ```bash
+    git clone https://github.com/your-username/LuaN1aoAgent.git
+    cd LuaN1aoAgent
+    ```
+  </Step>
+  <Step title="Create a virtual environment">
+    ```bash
+    python -m venv venv
+    source venv/bin/activate   # Linux / macOS
+    # venv\Scripts\activate    # Windows
+    ```
+  </Step>
+  <Step title="Install dependencies">
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+    Install pre-commit hooks (recommended):
+
+    ```bash
+    pip install pre-commit
+    pre-commit install
+    ```
+  </Step>
+  <Step title="Create a feature branch">
+    Use a descriptive branch name:
+
+    ```bash
+    # New feature
+    git checkout -b feature/amazing-feature
+
+    # Bug fix
+    git checkout -b fix/bug-description
+    ```
+  </Step>
+  <Step title="Make your changes">
+    Follow the code standards below. Write or update tests where applicable.
+  </Step>
+  <Step title="Commit and push">
+    ```bash
+    git add .
+    git commit -m "feat(planner): add branch replanning capability"
+    git push origin feature/amazing-feature
+    ```
+  </Step>
+  <Step title="Open a Pull Request">
+    Open a PR against the `main` branch. Fill in the PR template (see below) and link any related issues.
+  </Step>
+</Steps>
+
+---
+
+## Code standards
+
+The project uses [ruff](https://docs.astral.sh/ruff/) for linting and [black](https://black.readthedocs.io/) for formatting, configured in `pyproject.toml`.
+
+<AccordionGroup>
+  <Accordion title="Linting and formatting">
+    - **Linter**: `ruff` with rules from `pycodestyle`, `Pyflakes`, `isort`, `pep8-naming`, `flake8-bugbear`, and others.
+    - **Formatter**: `black`
+    - **Line length**: 120 characters
+    - **Python version**: 3.10+
+    - **Max cyclomatic complexity**: 15
+
+    Run the linter:
+
+    ```bash
+    ruff check .
+    ```
+
+    Run the formatter:
+
+    ```bash
+    black .
+    ```
+  </Accordion>
+  <Accordion title="Naming conventions">
+    ```python
+    # Classes: PascalCase
+    class GraphManager:
+        pass
+
+    # Functions and variables: snake_case
+    def process_graph_commands():
+        node_id = "task_1"
+
+    # Constants: UPPER_SNAKE_CASE
+    MAX_RETRY_COUNT = 3
+
+    # Private members: _leading_underscore
+    def _internal_method():
+        pass
+    ```
+  </Accordion>
+  <Accordion title="Import ordering">
+    ```python
+    # Standard library
+    import os
+    import sys
+
+    # Third-party
+    import httpx
+    from rich.console import Console
+
+    # Local modules
+    from core.graph_manager import GraphManager
+    from llm.llm_client import LLMClient
+    ```
+
+    First-party packages: `core`, `llm`, `rag`, `conf`, `tools`.
+  </Accordion>
+  <Accordion title="Docstrings and type hints">
+    ```python
+    from typing import Any, Dict, List, Optional
+
+    def function_name(param1: str, param2: int) -> str:
+        """
+        One-line summary.
+
+        Longer description if needed.
+
+        Args:
+            param1: Description of param1.
+            param2: Description of param2.
+
+        Returns:
+            str: Description of the return value.
+
+        Raises:
+            ValueError: When this occurs.
+        """
+        pass
+    ```
+  </Accordion>
+  <Accordion title="Function and module size">
+    - Keep individual functions under 50 lines where possible. Split larger functions into helpers.
+    - Each module should have a single, clear responsibility. Avoid circular imports.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Commit message format
+
+Use [Conventional Commits](https://www.conventionalcommits.org/):
+
+```
+<type>(<scope>): <short description>
+
+[optional body]
+
+[optional footer]
+```
+
+| Type | When to use |
+|---|---|
+| `feat` | New feature |
+| `fix` | Bug fix |
+| `docs` | Documentation only |
+| `style` | Formatting, no logic change |
+| `refactor` | Code restructuring |
+| `test` | Tests |
+| `chore` | Build / tooling |
+
+Examples:
+
+```bash
+git commit -m "feat(planner): add branch replanning functionality"
+git commit -m "fix(executor): resolve tool call timeout issue"
+git commit -m "docs: update installation instructions in README"
+```
+
+---
+
+## Pull Request process
+
+Use this template when opening a PR:
+
+```markdown
+**Change type**
+- [ ] Bug fix
+- [ ] New feature
+- [ ] Documentation update
+- [ ] Performance improvement
+- [ ] Refactoring
+
+**Description**
+Brief summary of what this PR does.
+
+**Related issue**
+Fixes #(issue number)
+
+**Testing**
+Describe how you tested these changes.
+
+**Checklist**
+- [ ] Code follows project standards
+- [ ] Necessary comments added
+- [ ] Related documentation updated
+- [ ] All tests pass
+- [ ] No new warnings introduced
+```
+
+PRs are reviewed for code quality, functional correctness, test coverage, documentation completeness, and backward compatibility.
+
+<Tip>
+  Smaller PRs are easier to review and faster to merge. Start with a focused change rather than a large refactor.
+</Tip>
+
+---
+
+## Testing
+
+```bash
+# Run all tests
+pytest
+
+# Run a specific test file
+pytest tests/test_planner.py
+
+# Run with coverage
+pytest --cov=core tests/
+```
+
+When writing tests, follow the Arrange-Act-Assert pattern:
+
+```python
+import pytest
+from core.planner import Planner
+
+class TestPlanner:
+    def setup_method(self):
+        self.planner = Planner(mock_llm_client)
+
+    def test_plan_generation(self):
+        # Arrange
+        goal = "test target"
+
+        # Act
+        result = self.planner.plan(goal)
+
+        # Assert
+        assert result is not None
+        assert len(result) > 0
+
+    @pytest.mark.asyncio
+    async def test_async_plan(self):
+        result = await self.planner.async_plan("target")
+        assert result is not None
+```
+
+---
+
+## Documentation contributions
+
+If your change affects user-facing behavior:
+
+1. Update `README.md` if the change affects setup or usage.
+2. Update `CHANGELOG.md` under `[Unreleased]`.
+3. Add usage examples where helpful.
+
+---
+
+## Current development priorities
+
+If you're looking for high-impact areas:
+
+1. **Core functionality** — Improving Planner strategy generation, Executor parallel processing, and Reflector analysis depth.
+2. **Tool ecosystem** — Additional security tool integrations and MCP tool development templates.
+3. **Performance** — Reducing LLM call count, improving graph manager efficiency, and reducing memory footprint.
+4. **User experience** — Web UI improvements, additional configuration options, and clearer error messages.
+
+---
+
+## License
+
+This project is licensed under [Apache 2.0](https://opensource.org/licenses/Apache-2.0). By submitting a contribution, you agree that your work will be distributed under the same license.
+
+## Getting help
+
+- Browse existing [Issues](https://github.com/SanMuzZzZz/LuaN1aoAgent/issues) and [Discussions](https://github.com/SanMuzZzZz/LuaN1aoAgent/discussions).
+- Ask questions in Discussions.
+- Email: [1614858685x@gmail.com](mailto:1614858685x@gmail.com)

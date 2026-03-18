@@ -1,0 +1,349 @@
+---
+title: "Installation"
+description: "Install LuaN1aoAgent on Linux, macOS, or Windows WSL2, including virtual environment setup, dependency installation, Docker container configuration, and knowledge base initialization."
+---
+
+## Prerequisites
+
+Before installing LuaN1aoAgent, ensure your system meets the following requirements:
+
+| Requirement | Minimum | Notes |
+|---|---|---|
+| **Python** | 3.10+ | Required for `asyncio` features and type hints |
+| **Operating system** | Linux, macOS, or Windows (WSL2) | Linux is recommended for production use |
+| **Memory** | 4 GB RAM | 8 GB+ recommended for RAG + LLM inference |
+| **Disk space** | ~2 GB | For dependencies, embedding models, and knowledge base |
+| **Network** | Internet access | For LLM API calls and `PayloadsAllTheThings` clone |
+| **LLM API** | OpenAI-compatible | GPT-4o, DeepSeek, Claude, or any compatible endpoint |
+
+<Warning>
+LuaN1aoAgent includes `shell_exec` and `python_exec` tools that can run arbitrary commands on your system. **Running inside a Docker container or virtual machine is strongly recommended** to isolate the agent from your host environment.
+</Warning>
+
+## Step 1: Clone the repository
+
+```bash
+git clone https://github.com/SanMuzZzZz/LuaN1aoAgent.git
+cd LuaN1aoAgent
+```
+
+## Step 2: Set up a virtual environment
+
+Using a virtual environment keeps LuaN1ao's dependencies isolated from your system Python.
+
+<Tabs>
+  <Tab title="Linux / macOS">
+    ```bash
+    python3 -m venv venv
+    source venv/bin/activate
+    ```
+
+    To deactivate later:
+    ```bash
+    deactivate
+    ```
+  </Tab>
+  <Tab title="Windows (WSL2)">
+    ```bash
+    python3 -m venv venv
+    source venv/bin/activate
+    ```
+
+    <Note>
+      Windows native Python is not supported. Use WSL2 with a Linux distribution (Ubuntu 22.04 LTS recommended).
+    </Note>
+  </Tab>
+</Tabs>
+
+## Step 3: Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+This installs all required packages, including:
+
+| Package | Purpose |
+|---|---|
+| `openai`, `anthropic` | LLM API clients |
+| `fastapi`, `uvicorn` | Web server and knowledge service |
+| `faiss-cpu` | FAISS vector index for RAG |
+| `sentence-transformers` | Embedding model for knowledge retrieval |
+| `sqlalchemy`, `aiosqlite` | SQLite database layer |
+| `networkx` | Task graph (DAG) management |
+| `rich` | Terminal output formatting |
+| `fastmcp`, `mcp` | Model Context Protocol tool integration |
+| `tenacity` | Automatic retry logic for LLM requests |
+| `httpx` | Async HTTP client |
+
+## Step 4: Verify the installation
+
+Confirm Python and key packages are available:
+
+```bash
+python --version
+# Python 3.10.x or higher
+
+python -c "import openai, faiss, networkx, fastapi; print('OK')"
+# OK
+```
+
+Verify the agent entry point is accessible:
+
+```bash
+python agent.py --help
+```
+
+You should see output listing all available CLI flags including `--goal`, `--task-name`, `--output-mode`, and others.
+
+## Step 5: Configure environment variables
+
+Create your `.env` file from the example template:
+
+```bash
+cp .env.example .env
+```
+
+Open `.env` and set your LLM provider credentials at minimum:
+
+```ini
+# Required
+LLM_API_KEY=your_api_key_here
+LLM_API_BASE_URL=https://api.openai.com/v1
+LLM_PROVIDER=openai
+
+# Model assignments
+LLM_DEFAULT_MODEL=gpt-4o
+LLM_PLANNER_MODEL=gpt-4o
+LLM_EXECUTOR_MODEL=gpt-4o
+LLM_REFLECTOR_MODEL=gpt-4o
+LLM_EXPERT_ANALYSIS_MODEL=gpt-4o
+```
+
+For Anthropic / Claude, set `LLM_PROVIDER=anthropic` and configure the `ANTHROPIC_*` variables instead:
+
+```ini
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
+ANTHROPIC_API_BASE_URL=https://api.anthropic.com/v1/messages
+ANTHROPIC_VERSION=2023-06-01
+ANTHROPIC_DEFAULT_MODEL=claude-sonnet-4-5
+ANTHROPIC_PLANNER_MODEL=claude-sonnet-4-5
+ANTHROPIC_EXECUTOR_MODEL=claude-sonnet-4-5
+ANTHROPIC_REFLECTOR_MODEL=claude-sonnet-4-5
+```
+
+See [Environment variables](/configuration/environment-variables) for the complete reference.
+
+## Step 6: Initialize the knowledge base
+
+The RAG system requires a vector index built from security knowledge documents before the agent can retrieve attack payloads and techniques. This is a one-time setup step.
+
+```bash
+# Create the knowledge base directory and clone PayloadsAllTheThings
+mkdir -p knowledge_base
+git clone https://github.com/swisskyrepo/PayloadsAllTheThings \
+    knowledge_base/PayloadsAllTheThings
+
+# Build the FAISS vector index
+cd rag
+python -m rag_kdprepare
+```
+
+The `rag_kdprepare` script:
+1. Downloads the sentence-transformer embedding model (first run only)
+2. Chunks all markdown documents in `knowledge_base/` into retrievable segments
+3. Builds a FAISS vector index and saves it to disk
+
+This takes a few minutes depending on your hardware. Subsequent runs of the agent will automatically start the RAG service from the pre-built index.
+
+<Note>
+  You can add your own knowledge documents (Markdown files) to `knowledge_base/` and re-run `rag_kdprepare` to include them in retrieval. Custom payloads, internal runbooks, or target-specific notes all work.
+</Note>
+
+## Optional: Docker setup
+
+Running LuaN1aoAgent inside Docker is the recommended approach for production or repeated use. It isolates the agent's high-privilege tool execution from your host system.
+
+<Tip>
+  A Docker setup gives the agent a clean, reproducible environment with `nmap`, `curl`, `sqlmap`, and other common security tools pre-installed, and prevents any shell commands from affecting your host.
+</Tip>
+
+A minimal `Dockerfile` to get started:
+
+```dockerfile
+FROM python:3.11-slim
+
+# Install common pentest tools
+RUN apt-get update && apt-get install -y \
+    nmap \
+    curl \
+    git \
+    sqlmap \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+# Expose web server port
+EXPOSE 8088
+```
+
+Build and run:
+
+```bash
+docker build -t luan1ao .
+
+docker run -it \
+  --env-file .env \
+  -p 8088:8088 \
+  -v $(pwd)/knowledge_base:/app/knowledge_base \
+  -v $(pwd)/logs:/app/logs \
+  luan1ao bash
+```
+
+Inside the container, start the web server and run agent tasks as normal:
+
+```bash
+python -m web.server &
+python agent.py --goal "Test http://target.example.com" --task-name "test"
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Python version is below 3.10">
+    LuaN1aoAgent requires Python 3.10 or higher due to use of `asyncio` task groups and newer type hint syntax.
+
+    Check your version:
+    ```bash
+    python3 --version
+    ```
+
+    On Ubuntu/Debian, install a newer version:
+    ```bash
+    sudo apt-get install python3.11
+    python3.11 -m venv venv
+    ```
+
+    On macOS with Homebrew:
+    ```bash
+    brew install python@3.11
+    ```
+  </Accordion>
+
+  <Accordion title="pip install fails with a faiss-cpu error">
+    `faiss-cpu` requires a compatible CPU (x86_64 or ARM64). On some Linux distributions you may need to install additional build tools:
+
+    ```bash
+    sudo apt-get install build-essential libopenblas-dev
+    pip install faiss-cpu
+    ```
+
+    On Apple Silicon (M1/M2/M3), use:
+    ```bash
+    pip install faiss-cpu --no-binary faiss-cpu
+    ```
+  </Accordion>
+
+  <Accordion title="rag_kdprepare fails or hangs">
+    The embedding model download can time out on slow connections. Check:
+
+    1. You have internet access from the machine or container.
+    2. The `knowledge_base/PayloadsAllTheThings` directory is non-empty.
+    3. You are running from within the `rag/` directory: `cd rag && python -m rag_kdprepare`.
+
+    If the model download fails repeatedly, set `HF_ENDPOINT` to a mirror:
+    ```bash
+    export HF_ENDPOINT=https://hf-mirror.com
+    python -m rag_kdprepare
+    ```
+  </Accordion>
+
+  <Accordion title="Web server fails to start on port 8088">
+    If port 8088 is already in use, change it in `.env`:
+
+    ```ini
+    WEB_HOST=127.0.0.1
+    WEB_PORT=9000
+    ```
+
+    Then start the server and access the UI at `http://localhost:9000`.
+  </Accordion>
+
+  <Accordion title="Knowledge service port 8081 is already in use">
+    The RAG knowledge service runs on port 8081 by default. If another process is using it, change the port in `.env`:
+
+    ```ini
+    KNOWLEDGE_SERVICE_HOST=127.0.0.1
+    KNOWLEDGE_SERVICE_PORT=8082
+    ```
+
+    The agent auto-starts the knowledge service and will use the configured port.
+  </Accordion>
+
+  <Accordion title="LLM API returns 401 or 403 errors">
+    Verify your API key and base URL in `.env`:
+
+    ```bash
+    # Test with curl (OpenAI)
+    curl https://api.openai.com/v1/models \
+      -H "Authorization: Bearer $LLM_API_KEY"
+    ```
+
+    Common causes:
+    - `LLM_API_KEY` is not set or contains whitespace
+    - `LLM_API_BASE_URL` does not match your provider's endpoint
+    - `LLM_PROVIDER` is set to `anthropic` but `ANTHROPIC_API_KEY` is missing
+  </Accordion>
+</AccordionGroup>
+
+## Directory structure
+
+After a successful installation and knowledge base setup, your directory should look like this:
+
+```
+LuaN1aoAgent/
+├── agent.py                    # Main entry point
+├── requirements.txt            # Python dependencies
+├── .env                        # Your environment configuration
+├── mcp.json                    # MCP tool service configuration
+├── luan1ao.db                  # SQLite database (created on first run)
+│
+├── conf/                       # Configuration module
+├── core/                       # P-E-R engine and graph manager
+├── llm/                        # LLM abstraction layer
+├── rag/                        # RAG knowledge service
+├── tools/                      # MCP tool integration
+├── web/                        # Web dashboard server
+│
+├── knowledge_base/             # Knowledge documents
+│   └── PayloadsAllTheThings/   # Cloned security knowledge base
+│
+└── logs/                       # Task execution logs
+    └── TASK-NAME/
+        └── TIMESTAMP/
+            ├── run_log.json
+            ├── metrics.json
+            └── console_output.log
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Run your first penetration testing task end-to-end.
+  </Card>
+  <Card title="Environment variables" icon="sliders" href="/configuration/environment-variables">
+    Complete reference for all configuration options.
+  </Card>
+  <Card title="Docker deployment" icon="docker" href="/guides/docker-deployment">
+    Full Docker Compose setup with pre-installed pentest tools.
+  </Card>
+  <Card title="Knowledge base setup" icon="book" href="/guides/knowledge-base-setup">
+    Add custom knowledge documents and rebuild the RAG index.
+  </Card>
+</CardGroup>

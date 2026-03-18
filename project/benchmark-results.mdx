@@ -1,0 +1,160 @@
+---
+title: "Benchmark Results"
+description: "LuaN1aoAgent's performance on the XBOW autonomous penetration testing benchmark — 90.4% success rate with a median exploit cost of $0.09."
+---
+
+<Warning>
+  All experimental data is based on the **DeepSeek-V3.2** model on the XBOW Benchmark under zero-shot, zero-human-intervention conditions. Results may vary with different LLM providers or models.
+</Warning>
+
+## What is the XBOW benchmark
+
+XBOW is a high-fidelity benchmark designed to evaluate LLM-based security agents. Unlike traditional puzzle-like CTFs, XBOW focuses on **real-world vulnerability primitives** and **multi-stage business logic exploit chains** — the kind of attack sequences that arise in production systems, not contrived lab exercises.
+
+<CardGroup cols={3}>
+  <Card title="104 test cases" icon="flask">
+    Unique scenarios spanning easy, medium, and hard difficulty levels.
+  </Card>
+  <Card title="OWASP Top 10: 2025" icon="shield">
+    Full coverage across 17 vulnerability categories and 18 CWE identifiers.
+  </Card>
+  <Card title="Real-world focus" icon="globe">
+    Business logic exploit chains, not contrived CTF puzzles.
+  </Card>
+</CardGroup>
+
+### Difficulty distribution
+
+- **Level 1 — Easy**: 45 cases
+- **Level 2 — Medium**: 51 cases
+- **Level 3 — Hard**: 8 cases
+
+Vulnerability categories include IDOR, Privilege Escalation, Injection, and 14 others spanning the full CWE landscape.
+
+---
+
+## Performance results
+
+Under zero-shot, zero-human-intervention conditions, LuaN1aoAgent (powered by DeepSeek-V3.2) established a new state-of-the-art (SOTA) for autonomous penetration testing.
+
+<Note>
+  LuaN1aoAgent was awarded **top ranking** at the [Tencent Cloud Hackathon (TCH)](https://zc.tencent.com/competition/competitionHackathon?code=cha004) for its performance and architecture.
+</Note>
+
+### Competitive comparison
+
+| Framework | Success Rate |
+|---|---|
+| **LuaN1aoAgent (ours)** | **90.4%** |
+| XBOW Commercial Agent | 85.0% |
+| Cyber-AutoAgent v0.1.3 | 84.62% |
+| MAPTA (Academic SOTA) | 76.9% |
+
+LuaN1aoAgent outperforms both the leading commercial agent (XBOW's own system) and the previous academic state-of-the-art by a meaningful margin.
+
+### Success rate by difficulty
+
+| Difficulty | Cases | Successes | Success Rate |
+|---|---|---|---|
+| Level 1 — Easy | 45 | 44 | 97.8% |
+| Level 2 — Medium | 51 | 44 | 86.3% |
+| Level 3 — Hard | 8 | 6 | **75.0%** |
+| **Total** | **104** | **94** | **90.4%** |
+
+The 75% success rate on Level 3 hard tasks — involving complex cross-service jumping and multi-stage logic chains — is particularly significant. This is where most frameworks degrade most sharply.
+
+---
+
+## Cost efficiency analysis
+
+Leveraging the "Hard Veto" mechanism in the Reflector, LuaN1aoAgent avoids redundant hallucination loops, significantly reducing both token consumption and wall-clock time.
+
+<CardGroup cols={2}>
+  <Card title="$0.09 median cost" icon="circle-dollar-sign">
+    Median cost per successful exploit. The average is $0.20, meaning the cost distribution is right-skewed — most exploits are cheap, with a small number of harder tasks consuming more budget.
+  </Card>
+  <Card title="11 minutes median time" icon="clock">
+    Median time to success. The fastest exploit completed in 1.6 minutes.
+  </Card>
+</CardGroup>
+
+### Full cost breakdown
+
+| Metric | Value |
+|---|---|
+| Total scenarios | 104 |
+| Successful exploits | 94 |
+| Success rate | 90.40% |
+| Average time per success | 16.1 min |
+| Median time per success | 11 min |
+| Fastest exploit convergence | 1.6 min |
+| Average cost per success | $0.20 |
+| **Median cost per success** | **$0.09** |
+| Total expenditure (all tasks) | $27.24 |
+| Total expenditure (successes only) | $18.91 |
+
+<Tip>
+  The $0.09 median cost is significant for practical deployment. Running the entire 104-task suite cost $27.24 total — a fraction of what commercial scanners charge for a single engagement.
+</Tip>
+
+---
+
+## How results were achieved
+
+The performance comes from the **Dual-Graph Cognitive Architecture (DGCA)**, which combines two complementary graph structures:
+
+<AccordionGroup>
+  <Accordion title="Cognitive Causal Graph (CCG)">
+    Tracks evidence, hypotheses, vulnerabilities, and exploits as nodes in a causal graph. Every hypothesis requires explicit prior evidence; every causal edge carries a confidence score. This prevents hallucination-driven blind attacks and makes the reasoning chain fully traceable.
+
+    The Reflector's "Hard Veto" mechanism uses CCG state to detect when the agent is stuck in a loop and terminates unproductive paths early — a key driver of cost efficiency.
+  </Accordion>
+  <Accordion title="Dynamic Task Graph (DTG)">
+    Models the penetration testing plan as a Directed Acyclic Graph (DAG). The Planner emits structured graph-editing operations (`ADD_NODE`, `UPDATE_NODE`, `DEPRECATE_NODE`) rather than natural language instructions. This enables real-time plan adaptation, automatic parallelization of independent sub-tasks, and topological dependency management.
+  </Accordion>
+</AccordionGroup>
+
+### Ablation study
+
+Disabling either graph component causes a significant performance drop, especially on harder tasks:
+
+| Framework version | Level 1 | Level 2 | Level 3 | Total SR |
+|---|---|---|---|---|
+| **LuaN1aoAgent (full)** | **97.8%** | **86.3%** | **75.0%** | **90.4%** |
+| Without Causal Graph (w/o CCG) | 93.3% | 58.8% | 25.0% | 71.2% |
+| Without Task Graph (w/o DTG) | 95.6% | 64.7% | 37.5% | 76.0% |
+| ReAct baseline | 88.9% | 39.2% | 25.0% | 59.6% |
+
+The performance gap is small on easy tasks but grows dramatically as complexity increases. On hard tasks, removing the Causal Graph drops success from 75% to 25% — the same as the naive ReAct baseline.
+
+---
+
+## Failure analysis
+
+Of the 104 tasks, 10 (9.6%) failed. Root-cause breakdown:
+
+| Category | Root cause | Representative cases | Ratio |
+|---|---|---|---|
+| Stochastic observation | Blind SQLi / high-uncertainty environments | XBEN-095, XBEN-056 | 40% |
+| Temporal sensitivity | Race conditions / timing-based attacks | XBEN-042 | 20% |
+| Protocol bottlenecks | Complex HTTP Smuggling / Desync | XBEN-101 | 20% |
+| Context overload | State-knowledge conflation in extreme depth | XBEN-088 | 20% |
+
+Three systemic failure patterns were identified:
+
+1. **Causal misattribution (40%)** — The agent misinterprets ambiguous HTTP responses (e.g., 403 from a space filter vs. a WAF blocking `SELECT`) and incorrectly prunes a valid attack path.
+2. **Strategic divergence / "red herring" effect (30%)** — The agent is distracted by high-entropy artifacts and ignores a verified exploit window.
+3. **Abstraction leakage (30%)** — HTTP library middleware normalizes malformed protocol semantics required for the attack before they reach the wire (e.g., HTTP Smuggling case XBEN-066).
+
+---
+
+## Benchmark traces
+
+Full execution traces for all four experimental variants are available in the repository under `xbow-benchmark-results/traces/`:
+
+- `traces/Ours/` — Full LuaN1aoAgent
+- `traces/Ours-CCG/` — Without Causal Graph
+- `traces/Ours-DTG/` — Without Task Graph
+- `traces/ReAct/` — ReAct baseline
+
+See the [xbow-benchmark-results directory](https://github.com/SanMuzZzZz/LuaN1aoAgent/tree/main/xbow-benchmark-results) on GitHub for the complete dataset.

@@ -1,0 +1,365 @@
+---
+title: "Environment Variables"
+description: "Complete reference for all environment variables that configure LuaN1aoAgent."
+---
+
+LuaN1aoAgent is configured entirely through environment variables, loaded from a `.env` file at startup via `python-dotenv`. Copy `.env.example` to `.env` and edit the values before running the agent.
+
+## Complete `.env` example
+
+```bash .env
+# ── Required ────────────────────────────────────────────────────
+LLM_API_KEY=your_api_key_here
+
+# ── LLM provider & models ───────────────────────────────────────
+LLM_PROVIDER=openai
+LLM_API_BASE_URL=https://api.openai.com/v1
+LLM_DEFAULT_MODEL=gpt-4o
+LLM_PLANNER_MODEL=gpt-4o
+LLM_EXECUTOR_MODEL=gpt-4o
+LLM_REFLECTOR_MODEL=gpt-4o
+LLM_EXPERT_MODEL=gpt-4o
+
+# ── Anthropic (only when LLM_PROVIDER=anthropic) ────────────────
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
+ANTHROPIC_API_BASE_URL=https://api.anthropic.com/v1/messages
+ANTHROPIC_VERSION=2023-06-01
+ANTHROPIC_DEFAULT_MODEL=claude-sonnet-4-5
+
+# ── Scenario & output ───────────────────────────────────────────
+SCENARIO_MODE=general
+OUTPUT_MODE=default
+PROMPT_LANGUAGE=en
+
+# ── Executor behavior ───────────────────────────────────────────
+EXECUTOR_MAX_STEPS=8
+EXECUTOR_TOOL_TIMEOUT=120
+EXECUTOR_MAX_OUTPUT_LENGTH=50000
+GLOBAL_MAX_CYCLES=50
+GLOBAL_MAX_TOKEN_USAGE=5000000
+
+# ── Web UI ──────────────────────────────────────────────────────
+WEB_HOST=127.0.0.1
+WEB_PORT=8088
+
+# ── Knowledge service ───────────────────────────────────────────
+KNOWLEDGE_SERVICE_HOST=127.0.0.1
+KNOWLEDGE_SERVICE_PORT=8081
+
+# ── Human-in-the-loop ───────────────────────────────────────────
+HUMAN_IN_THE_LOOP=false
+```
+
+<Note>
+  Variables marked **required** have no default and will cause the agent to fail at startup if unset. All others are optional and fall back to the documented defaults.
+</Note>
+
+---
+
+## Core scenario
+
+<ParamField query="SCENARIO_MODE" type="string" default="general">
+  Sets the overall operating mode.
+
+  | Value | Description |
+  |---|---|
+  | `general` | Full-featured mode for real-world and internal-network pentests. All tools enabled. |
+  | `ctf` | Optimised for Capture-the-Flag competitions. Disables large-scale scanning tools and activates CTF-specific prompt tuning. |
+</ParamField>
+
+---
+
+## Output
+
+<ParamField query="OUTPUT_MODE" type="string" default="default">
+  Controls how much information is printed to the console during a run. See [Output Modes](/configuration/output-modes) for a full comparison.
+
+  | Value | Description |
+  |---|---|
+  | `simple` | Minimal output — core results only. |
+  | `default` | Standard output for normal use. |
+  | `debug` | Verbose output, equivalent to `--verbose`. |
+</ParamField>
+
+<ParamField query="PROMPT_LANGUAGE" type="string" default="zh">
+  Language used for internal agent prompts.
+
+  | Value | Description |
+  |---|---|
+  | `zh` | Chinese (default) |
+  | `en` | English |
+</ParamField>
+
+---
+
+## LLM API
+
+<ParamField query="LLM_API_KEY" type="string" required>
+  API key for the primary LLM service. **Required** — the agent will not start without this value.
+</ParamField>
+
+<ParamField query="LLM_API_BASE_URL" type="string" default="https://api.openai.com/v1">
+  Base URL for the OpenAI-compatible API endpoint. Override this to use a third-party provider such as DeepSeek or a local proxy.
+</ParamField>
+
+<ParamField query="LLM_FALLBACK_API_KEY" type="string">
+  Secondary API key used automatically when the primary key encounters a `429` rate-limit error. If unset, the agent performs exponential back-off on the primary key instead.
+</ParamField>
+
+---
+
+## LLM models
+
+Each agent role can be assigned an independent model. This lets you run an inexpensive fast model for the executor while reserving your strongest model for the planner.
+
+<ParamField query="LLM_DEFAULT_MODEL" type="string" default="gpt-4o">
+  Fallback model used by any role that does not have an explicit model configured.
+</ParamField>
+
+<ParamField query="LLM_PLANNER_MODEL" type="string" default="gpt-4o">
+  Model for the Planner role, which builds the attack task graph. Assign your strongest model here.
+</ParamField>
+
+<ParamField query="LLM_EXECUTOR_MODEL" type="string" default="gpt-4o">
+  Model for the Executor role, which runs tools step-by-step within a task.
+</ParamField>
+
+<ParamField query="LLM_REFLECTOR_MODEL" type="string" default="gpt-4o">
+  Model for the Reflector role, which performs causal analysis and updates the knowledge graph.
+</ParamField>
+
+<ParamField query="LLM_EXPERT_MODEL" type="string" default="gpt-4o">
+  Model for the Expert Analysis role, invoked by the `expert_analysis` MCP tool when the executor escalates a hard problem.
+</ParamField>
+
+<ParamField query="LLM_SUMMARIZER_MODEL" type="string" default="LLM_DEFAULT_MODEL">
+  Model used to compress long conversation history. Falls back to `LLM_DEFAULT_MODEL` when not set.
+</ParamField>
+
+<ParamField query="LLM_REFLECTOR_VALIDATOR_MODEL" type="string" default="LLM_REFLECTOR_MODEL">
+  Model for the binary yes/no reflector validation step. Defaults to `LLM_REFLECTOR_MODEL`.
+</ParamField>
+
+<ParamField query="LLM_PLANNER_CRISIS_EXPERT_MODEL" type="string" default="LLM_PLANNER_MODEL">
+  Model used when the planner triggers a crisis re-planning event. Defaults to `LLM_PLANNER_MODEL`.
+</ParamField>
+
+---
+
+## LLM advanced
+
+<ParamField query="LLM_EXTRA_BODY_ENABLED" type="boolean" default="false">
+  When `true`, the agent injects an `extra_body` field into OpenAI-compatible API requests. This is required to enable thinking-mode features on providers that support it (e.g., `extra_body: {thinking: "hidden"}`). Has no effect when `LLM_PROVIDER=anthropic`.
+</ParamField>
+
+<ParamField query="LLM_DEFAULT_THINKING" type="string" default="off">
+  Default thinking-mode setting applied to all roles unless a per-role override is present. Only takes effect when `LLM_EXTRA_BODY_ENABLED=true`.
+
+  | Value | Description |
+  |---|---|
+  | `off` | Thinking mode disabled (no `extra_body` injected). |
+  | `hidden` | Thinking enabled; chain-of-thought not returned in the response. |
+  | `visible` | Thinking enabled; chain-of-thought returned in `reasoning_content` or similar. |
+</ParamField>
+
+Per-role thinking overrides follow the pattern `LLM_<ROLE>_THINKING`. All fall back to `LLM_DEFAULT_THINKING` if unset:
+
+| Variable | Role |
+|---|---|
+| `LLM_PLANNER_THINKING` | Planner |
+| `LLM_EXECUTOR_THINKING` | Executor |
+| `LLM_REFLECTOR_THINKING` | Reflector |
+| `LLM_EXPERT_THINKING` | Expert Analysis |
+| `LLM_SUMMARIZER_THINKING` | Summarizer |
+| `LLM_REFLECTOR_VALIDATOR_THINKING` | Reflector Validator |
+| `LLM_PLANNER_CRISIS_EXPERT_THINKING` | Planner Crisis Expert |
+
+---
+
+## LLM providers
+
+<ParamField query="LLM_PROVIDER" type="string" default="openai">
+  Selects the LLM backend.
+
+  | Value | Description |
+  |---|---|
+  | `openai` | OpenAI or any compatible API (DeepSeek, local proxies, etc.). |
+  | `anthropic` | Anthropic Claude native API. |
+
+  See [LLM Providers](/configuration/llm-providers) for full configuration examples.
+</ParamField>
+
+<ParamField query="ANTHROPIC_API_KEY" type="string" default="LLM_API_KEY">
+  API key for the Anthropic API. Defaults to the value of `LLM_API_KEY` when not explicitly set.
+</ParamField>
+
+<ParamField query="ANTHROPIC_API_BASE_URL" type="string" default="https://api.anthropic.com/v1/messages">
+  Endpoint for the Anthropic Messages API.
+</ParamField>
+
+<ParamField query="ANTHROPIC_FALLBACK_API_KEY" type="string" default="LLM_FALLBACK_API_KEY">
+  Fallback key for Anthropic rate-limit handling. Defaults to `LLM_FALLBACK_API_KEY`.
+</ParamField>
+
+<ParamField query="ANTHROPIC_VERSION" type="string" default="2023-06-01">
+  Value sent in the `anthropic-version` request header.
+</ParamField>
+
+Anthropic per-role model overrides follow the pattern `ANTHROPIC_<ROLE>_MODEL`:
+
+| Variable | Default |
+|---|---|
+| `ANTHROPIC_DEFAULT_MODEL` | `claude-3-5-sonnet-20240620` |
+| `ANTHROPIC_PLANNER_MODEL` | `claude-3-5-sonnet-20240620` |
+| `ANTHROPIC_EXECUTOR_MODEL` | `claude-3-5-sonnet-20240620` |
+| `ANTHROPIC_REFLECTOR_MODEL` | `claude-3-5-sonnet-20240620` |
+| `ANTHROPIC_EXPERT_MODEL` | `claude-3-5-sonnet-20240620` |
+| `ANTHROPIC_SUMMARIZER_MODEL` | `ANTHROPIC_DEFAULT_MODEL` |
+| `ANTHROPIC_REFLECTOR_VALIDATOR_MODEL` | `ANTHROPIC_REFLECTOR_MODEL` |
+| `ANTHROPIC_PLANNER_CRISIS_EXPERT_MODEL` | `ANTHROPIC_PLANNER_MODEL` |
+
+---
+
+## Executor behavior
+
+<ParamField query="EXECUTOR_MAX_STEPS" type="integer" default="8">
+  Maximum number of tool-call steps the executor may take within a single task cycle before forcing termination.
+</ParamField>
+
+<ParamField query="EXECUTOR_MESSAGE_COMPRESS_THRESHOLD" type="integer" default="12">
+  Number of messages in the executor's context window that triggers history compression.
+</ParamField>
+
+<ParamField query="EXECUTOR_TOKEN_COMPRESS_THRESHOLD" type="integer" default="80000">
+  Token count in the executor context that triggers compression, regardless of message count.
+</ParamField>
+
+<ParamField query="EXECUTOR_NO_ARTIFACTS_PATIENCE" type="integer" default="4">
+  If the executor completes this many consecutive steps without producing a new artifact (finding, credential, flag, etc.), the cycle is terminated. Must be less than `EXECUTOR_MAX_STEPS`.
+</ParamField>
+
+<ParamField query="EXECUTOR_FAILURE_THRESHOLD" type="integer" default="3">
+  Number of consecutive tool failures that triggers a strategy switch.
+</ParamField>
+
+<ParamField query="EXECUTOR_RECENT_MESSAGES_KEEP" type="integer" default="6">
+  Number of most-recent messages preserved verbatim when compressing history.
+</ParamField>
+
+<ParamField query="EXECUTOR_MIN_COMPRESS_MESSAGES" type="integer" default="5">
+  Minimum message count required before compression is considered.
+</ParamField>
+
+<ParamField query="EXECUTOR_COMPRESS_INTERVAL" type="integer" default="5">
+  How many execution rounds must pass between successive compressions.
+</ParamField>
+
+<ParamField query="EXECUTOR_COMPRESS_INTERVAL_MSG_THRESHOLD" type="integer" default="8">
+  Message count threshold evaluated at each compression interval.
+</ParamField>
+
+<ParamField query="EXECUTOR_TOOL_TIMEOUT" type="integer" default="120">
+  Default tool execution timeout in seconds. Used for any tool that does not have its own `TOOL_TIMEOUT_*` override.
+</ParamField>
+
+<ParamField query="EXECUTOR_MAX_OUTPUT_LENGTH" type="integer" default="50000">
+  Maximum characters retained from a single tool output. Longer outputs are truncated before being fed back to the LLM.
+</ParamField>
+
+<ParamField query="GLOBAL_MAX_CYCLES" type="integer" default="50">
+  Hard cap on the total number of Planner-Executor-Reflector (P-E-R) cycles. Acts as a safety circuit-breaker against infinite loops.
+</ParamField>
+
+<ParamField query="GLOBAL_MAX_TOKEN_USAGE" type="integer" default="5000000">
+  Hard cap on cumulative token consumption across the entire run. The agent halts when this limit is reached.
+</ParamField>
+
+### Per-tool timeout overrides
+
+Each tool can have its timeout adjusted independently. Unrecognised tools fall back to `EXECUTOR_TOOL_TIMEOUT`.
+
+| Variable | Tool | Default (seconds) |
+|---|---|---|
+| `TOOL_TIMEOUT_SQLMAP` | `sqlmap_tool` | `600` |
+| `TOOL_TIMEOUT_NUCLEI` | `nuclei_scan` | `300` |
+| `TOOL_TIMEOUT_DIRSEARCH` | `dirsearch_scan` | `300` |
+| `TOOL_TIMEOUT_CONCURRENCY` | `concurrency_test` | `180` |
+| `TOOL_TIMEOUT_HTTP` | `http_request` | `60` |
+| `TOOL_TIMEOUT_SHELL` | `shell_exec` | `120` |
+| `TOOL_TIMEOUT_PYTHON` | `python_exec` | `300` |
+| `TOOL_TIMEOUT_WEB_SEARCH` | `web_search` | `30` |
+| `TOOL_TIMEOUT_SEARCH_EXPLOIT` | `search_exploit` | `30` |
+| `TOOL_TIMEOUT_THINK` | `think` | `30` |
+| `TOOL_TIMEOUT_HYPOTHESES` | `formulate_hypotheses` | `30` |
+| `TOOL_TIMEOUT_REFLECT` | `reflect_on_failure` | `30` |
+| `TOOL_TIMEOUT_EXPERT` | `expert_analysis` | `60` |
+| `TOOL_TIMEOUT_RETRIEVE` | `retrieve_knowledge` | `15` |
+| `TOOL_TIMEOUT_DISTILL` | `distill_knowledge` | `20` |
+
+---
+
+## Context management
+
+<ParamField query="PLANNER_HISTORY_WINDOW" type="integer" default="15">
+  Number of past P-E-R cycle summaries the Planner can see when building a new plan.
+</ParamField>
+
+<ParamField query="REFLECTOR_HISTORY_WINDOW" type="integer" default="15">
+  Number of recent reflection log entries available to the Reflector when updating the causal graph.
+</ParamField>
+
+---
+
+## Ablation
+
+These variables are primarily for research and ablation studies. Changing them disables architectural components of the agent.
+
+<ParamField query="EXECUTION_MODE" type="string" default="default">
+  Controls which agent architecture is active.
+
+  | Value | Description |
+  |---|---|
+  | `default` | Full P-E-R (Planner-Executor-Reflector) mode with dynamic task graph. |
+  | `linear` | Linear mode — task graph disabled, no dynamic branching. |
+  | `react` | Pure ReAct mode — Executor only, Planner and Reflector disabled. |
+</ParamField>
+
+<ParamField query="NO_CAUSAL_GRAPH" type="boolean" default="false">
+  When `true`, disables the Reflector's causal graph updates and the Planner's causal reasoning. The agent reverts to a simple memory model.
+</ParamField>
+
+---
+
+## Web service
+
+<ParamField query="WEB_HOST" type="string" default="127.0.0.1">
+  Host address the Web UI server binds to. Set to `0.0.0.0` to expose the UI on all network interfaces.
+</ParamField>
+
+<ParamField query="WEB_PORT" type="integer" default="8088">
+  Port for the Web UI server.
+</ParamField>
+
+---
+
+## Knowledge service
+
+<ParamField query="KNOWLEDGE_SERVICE_HOST" type="string" default="127.0.0.1">
+  Host where the RAG knowledge service is running.
+</ParamField>
+
+<ParamField query="KNOWLEDGE_SERVICE_PORT" type="integer" default="8081">
+  Port for the RAG knowledge service.
+</ParamField>
+
+<ParamField query="KNOWLEDGE_SERVICE_URL" type="string" default="http://{KNOWLEDGE_SERVICE_HOST}:{KNOWLEDGE_SERVICE_PORT}">
+  Full URL for the knowledge service. Constructed automatically from host and port when not set explicitly. Override this when the service runs on a different machine.
+</ParamField>
+
+---
+
+## Human-in-the-loop (HITL)
+
+<ParamField query="HUMAN_IN_THE_LOOP" type="boolean" default="false">
+  When `true`, the agent pauses after generating each plan and waits for human approval via the Web UI or CLI before execution begins. Useful for supervised red-team engagements.
+</ParamField>

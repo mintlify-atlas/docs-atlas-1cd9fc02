@@ -1,0 +1,318 @@
+---
+title: "MCP Tools"
+description: "Configure and extend the MCP tool layer that connects LuaN1aoAgent to penetration testing utilities."
+---
+
+LuaN1aoAgent uses the **Model Context Protocol (MCP)** as its tool interface. All tools the executor can call — from `http_request` to `sqlmap_tool` — are exposed through a single MCP server process defined in `mcp.json`.
+
+---
+
+## Default configuration
+
+The default `mcp.json` at the project root launches `tools/mcp_service.py` as a stdio MCP server:
+
+```json mcp.json
+{
+  "mcpServers": {
+    "tools": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-u", "./tools/mcp_service.py"],
+      "env": {
+        "FASTMCP_NO_BANNER": "1",
+        "FASTMCP_LOG_LEVEL": "WARNING"
+      }
+    }
+  }
+}
+```
+
+The server is implemented with the **FastMCP** framework (`mcp.server.fastmcp.FastMCP`). The `FASTMCP_NO_BANNER` and `FASTMCP_LOG_LEVEL` environment variables suppress startup noise.
+
+---
+
+## Built-in tools
+
+All tools registered in `tools/mcp_service.py` are available to the executor out of the box.
+
+<AccordionGroup>
+  <Accordion title="HTTP and network tools">
+    | Tool | Description |
+    |---|---|
+    | `http_request` | Full-featured HTTP client with persistent session and cookie management. The preferred tool for all single web requests. |
+    | `concurrency_test` | Sends up to 50 concurrent requests simultaneously for race condition and TOCTOU testing. |
+    | `start_payload_server` | Starts a temporary HTTP server (ports 18000–18999) to serve RFI/XXE/SSRF callback payloads. |
+    | `stop_payload_server` | Stops a payload server by its `server_id`. |
+    | `get_payload_server_logs` | Returns request logs for a running payload server (useful for OOB confirmation). |
+    | `list_payload_servers` | Lists all active payload servers. |
+  </Accordion>
+  <Accordion title="Execution tools">
+    | Tool | Description |
+    |---|---|
+    | `shell_exec` | Executes arbitrary shell commands asynchronously with real-time output. |
+    | `python_exec` | Executes self-contained Python scripts in a sandboxed scope with session cookie inheritance. |
+  </Accordion>
+  <Accordion title="Vulnerability scanning tools">
+    | Tool | Description |
+    |---|---|
+    | `sqlmap_tool` | Runs `sqlmap` against a URL or raw HTTP request file. |
+    | `dirsearch_scan` | Runs `dirsearch` for web directory and file enumeration. |
+    | `nuclei_scan` | Runs Nuclei template-based vulnerability scans. |
+    | `nuclei_list_templates` | Lists available Nuclei templates filtered by keyword, tag, or severity. |
+  </Accordion>
+  <Accordion title="Intelligence tools">
+    | Tool | Description |
+    |---|---|
+    | `web_search` | DuckDuckGo web search for vulnerability research and documentation. |
+    | `search_exploit` | Queries NVD and Exploit-DB (via `searchsploit`) for CVEs and public PoCs. |
+    | `view_exploit` | Reads exploit code from Exploit-DB by EDB-ID or local path. |
+    | `retrieve_knowledge` | Semantic search against the local RAG knowledge base. |
+    | `distill_knowledge` | Saves a newly learned technique to the permanent skill library. |
+  </Accordion>
+  <Accordion title="Metacognitive tools">
+    | Tool | Description |
+    |---|---|
+    | `think` | Structured reasoning tool for deep analysis or identifying knowledge gaps. |
+    | `formulate_hypotheses` | Systematically proposes new attack hypotheses when the executor is stuck. |
+    | `reflect_on_failure` | Structured root-cause analysis after a tool failure. |
+    | `expert_analysis` | Escalates a hard problem to an independent LLM expert call. |
+    | `complete_mission` | Signals successful task completion and terminates the run. |
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Adding custom tools
+
+You can extend the tool layer in two ways.
+
+### Option 1: Add tools to `mcp_service.py`
+
+Register a new function with the `@mcp.tool()` decorator:
+
+```python tools/mcp_service.py
+@mcp.tool()
+async def my_custom_tool(target: str, option: str = "default") -> str:
+    """
+    Brief description shown to the executor.
+
+    Args:
+        target: The target to operate on.
+        option: An optional parameter.
+
+    Returns:
+        JSON string with the result.
+    """
+    import json
+    # ... implementation ...
+    return json.dumps({"success": True, "output": "..."})
+```
+
+### Option 2: Add a separate MCP server in `mcp.json`
+
+Add a new entry under `mcpServers` to run an additional MCP server alongside the built-in one:
+
+```json mcp.json
+{
+  "mcpServers": {
+    "tools": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-u", "./tools/mcp_service.py"],
+      "env": {
+        "FASTMCP_NO_BANNER": "1",
+        "FASTMCP_LOG_LEVEL": "WARNING"
+      }
+    },
+    "metasploit": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-u", "./tools/msf_mcp.py"]
+    }
+  }
+}
+```
+
+### Example integrations
+
+<Tabs>
+  <Tab title="Metasploit RPC">
+    ```python tools/msf_mcp.py
+    from mcp.server.fastmcp import FastMCP
+    import json, requests
+
+    mcp = FastMCP("metasploit")
+    MSF_URL = "http://127.0.0.1:55553/api/v1"
+    MSF_TOKEN = "your_msf_rpc_token"
+
+    @mcp.tool()
+    def msf_run_module(module: str, options: dict) -> str:
+        """
+        Execute a Metasploit module via the RPC API.
+
+        Args:
+            module: Module path (e.g. "exploit/multi/handler").
+            options: Key-value options for the module.
+        """
+        resp = requests.post(
+            f"{MSF_URL}/modules/execute",
+            headers={"Authorization": f"Bearer {MSF_TOKEN}"},
+            json={"module_type": "exploit", "module_name": module, "data": options},
+        )
+        return json.dumps(resp.json())
+
+    if __name__ == "__main__":
+        mcp.run()
+    ```
+
+    ```json mcp.json (addition)
+    "metasploit": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-u", "./tools/msf_mcp.py"]
+    }
+    ```
+  </Tab>
+  <Tab title="Nuclei (extended)">
+    The built-in `nuclei_scan` tool covers most cases. To add a wrapper that pre-selects templates from a custom path:
+
+    ```python tools/mcp_service.py
+    @mcp.tool()
+    async def nuclei_custom_templates(target: str, template_dir: str) -> str:
+        """
+        Run Nuclei with templates from a custom directory.
+
+        Args:
+            target: Target URL.
+            template_dir: Absolute path to a directory of .yaml templates.
+        """
+        import asyncio, json
+        cmd = ["nuclei", "-u", target, "-t", template_dir, "-jsonl", "-silent"]
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await proc.communicate()
+        findings = [json.loads(l) for l in stdout.decode().splitlines() if l.strip()]
+        return json.dumps({"success": True, "findings": findings})
+    ```
+  </Tab>
+  <Tab title="Burp Suite API">
+    ```python tools/burp_mcp.py
+    from mcp.server.fastmcp import FastMCP
+    import json, requests
+
+    mcp = FastMCP("burp")
+    BURP_URL = "http://127.0.0.1:1337/v0.1"
+
+    @mcp.tool()
+    def burp_active_scan(url: str) -> str:
+        """
+        Trigger a Burp Suite active scan against a URL.
+
+        Args:
+            url: Target URL to scan.
+        """
+        resp = requests.post(
+            f"{BURP_URL}/scan",
+            json={"urls": [url]},
+        )
+        return json.dumps({"task_id": resp.json().get("task_id")})
+
+    @mcp.tool()
+    def burp_scan_status(task_id: int) -> str:
+        """
+        Poll the status of a Burp active scan task.
+
+        Args:
+            task_id: Task ID returned by burp_active_scan.
+        """
+        resp = requests.get(f"{BURP_URL}/scan/{task_id}")
+        return json.dumps(resp.json())
+
+    if __name__ == "__main__":
+        mcp.run()
+    ```
+
+    ```json mcp.json (addition)
+    "burp": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-u", "./tools/burp_mcp.py"]
+    }
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+## Tool timeout configuration
+
+All tool timeouts are controlled via environment variables. The executor enforces these limits and returns a timeout error to the LLM if a tool exceeds its budget.
+
+```bash .env
+# Default timeout for any tool without a specific override (seconds)
+EXECUTOR_TOOL_TIMEOUT=120
+
+# Heavy scanning tools — need more time
+TOOL_TIMEOUT_SQLMAP=600
+TOOL_TIMEOUT_NUCLEI=300
+TOOL_TIMEOUT_DIRSEARCH=300
+TOOL_TIMEOUT_CONCURRENCY=180
+
+# Standard tools
+TOOL_TIMEOUT_SHELL=120
+TOOL_TIMEOUT_PYTHON=300
+TOOL_TIMEOUT_HTTP=60
+
+# Fast intelligence / metacognitive tools
+TOOL_TIMEOUT_WEB_SEARCH=30
+TOOL_TIMEOUT_SEARCH_EXPLOIT=30
+TOOL_TIMEOUT_THINK=30
+TOOL_TIMEOUT_HYPOTHESES=30
+TOOL_TIMEOUT_REFLECT=30
+TOOL_TIMEOUT_EXPERT=60
+TOOL_TIMEOUT_RETRIEVE=15
+TOOL_TIMEOUT_DISTILL=20
+```
+
+<Tip>
+  Increase `TOOL_TIMEOUT_SQLMAP` when testing against high-latency targets or when using high `--level` / `--risk` settings. Long-running sqlmap jobs can easily take 10+ minutes.
+</Tip>
+
+---
+
+## Environment variables that affect tool behavior
+
+| Variable | Effect on tools |
+|---|---|
+| `SCENARIO_MODE=ctf` | Disables large-scale scanning tools (`nuclei_scan`, `dirsearch_scan`, `sqlmap_tool`) to prevent noise in CTF environments. |
+| `KNOWLEDGE_SERVICE_URL` | Controls where `retrieve_knowledge` and `distill_knowledge` send requests. |
+| `EXECUTOR_MAX_OUTPUT_LENGTH` | Truncates tool stdout/stderr before it is sent back to the LLM. |
+
+---
+
+## FastMCP framework
+
+The tool layer is built on **FastMCP**, a high-level wrapper around the MCP server SDK. Key properties:
+
+- Tools are plain Python functions decorated with `@mcp.tool()`.
+- Both `async` and synchronous functions are supported.
+- The server communicates over `stdio` (default) or `sse`.
+- The server instance is named `"LuaN1ao-mcp"` in `mcp_service.py`.
+- Logs are written to `logs/mcp_service.log`.
+
+```python
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("my-server")
+
+@mcp.tool()
+def greet(name: str) -> str:
+    """Greet someone by name."""
+    return f"Hello, {name}"
+
+if __name__ == "__main__":
+    mcp.run()  # stdio transport by default
+```

@@ -1,0 +1,120 @@
+---
+title: "Roadmap"
+description: "Completed features, planned capabilities, and the long-term vision for LuaN1aoAgent."
+---
+
+## Status overview
+
+<CardGroup cols={2}>
+  <Card title="Completed" icon="circle-check">
+    Human-in-the-Loop Mode is fully implemented and available in the current release.
+  </Card>
+  <Card title="Planned" icon="circle-dashed">
+    Experience Self-Evolution, Tool Ecosystem Expansion, and Multimodal Capabilities are on the near-term roadmap.
+  </Card>
+</CardGroup>
+
+---
+
+## Completed features
+
+### Human-in-the-Loop (HITL) mode
+
+LuaN1aoAgent supports supervised operation, allowing security experts to review and intervene in the agent's decision-making process in real time.
+
+<AccordionGroup>
+  <Accordion title="Pre-high-risk operation confirmation">
+    Before executing any operation flagged as high-risk, the agent pauses and waits for explicit human approval. This prevents irreversible actions from being taken without oversight.
+
+    Enable via `.env`:
+
+    ```ini
+    HUMAN_IN_THE_LOOP=true
+    ```
+  </Accordion>
+  <Accordion title="Runtime task graph editing (Graph Injection)">
+    Experts can inspect, modify, and inject new sub-tasks into the live task graph while the agent is running — without stopping the session. Modifications can be made through either the Web UI or the CLI.
+
+    - **Web UI**: An approval modal appears automatically after plan generation. Use "Modify" to edit the plan JSON directly, or "Add Task" to inject new sub-tasks.
+    - **CLI**: The agent pauses at `HITL >`. Type `y` to approve, `n` to reject, or `m` to open the system editor and modify the plan.
+  </Accordion>
+  <Accordion title="Expert intervention and strategy injection">
+    Security experts can inject domain knowledge, alternative hypotheses, or targeted instructions directly into the running plan. The Planner incorporates this guidance on its next planning cycle.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Planned features
+
+### Experience self-evolution
+
+Persistent cross-task learning so the agent improves from every engagement it runs.
+
+<Steps>
+  <Step title="Cross-task long-term memory">
+    The agent will maintain a persistent memory store across separate tasks. Findings, failed approaches, and confirmed vulnerabilities from past engagements inform future ones.
+  </Step>
+  <Step title="Automatic extraction of successful attack patterns">
+    When an exploit succeeds, the attack chain is automatically extracted, vectorized, and stored in the knowledge library. This creates a self-growing playbook.
+  </Step>
+  <Step title="Intelligent recommendations from historical experience">
+    At the start of each new task, the RAG system retrieves relevant past patterns based on the target's profile, guiding the Planner toward high-probability attack paths from the outset.
+  </Step>
+</Steps>
+
+### Tool ecosystem expansion
+
+Broader tool integration to cover more of the standard penetration testing toolkit.
+
+<AccordionGroup>
+  <Accordion title="Metasploit RPC interface">
+    Native integration with the Metasploit Framework via its RPC API. The Executor will be able to invoke Metasploit modules directly as part of the tool chain, enabling exploitation of the full Metasploit module library.
+  </Accordion>
+  <Accordion title="Nuclei, Xray, and AWVS scanner support">
+    Integration with industry-standard scanning tools:
+    - **Nuclei** — Template-based vulnerability scanning
+    - **Xray** — Passive vulnerability scanner
+    - **AWVS** — Web application vulnerability scanner
+
+    These can already be added manually via `mcp.json`. First-class support will include pre-built configurations and result parsing.
+  </Accordion>
+  <Accordion title="Docker sandboxed tool execution">
+    A Docker-based sandbox environment for executing tools in isolation. This eliminates the host-system risk currently posed by `shell_exec` and `python_exec`, making the agent safe to run outside of a dedicated VM.
+  </Accordion>
+</AccordionGroup>
+
+### Multimodal capabilities
+
+Extending the agent's perceptual range beyond text-based HTTP traffic.
+
+<CardGroup cols={2}>
+  <Card title="Image recognition" icon="image">
+    CAPTCHA solving and screenshot analysis. The agent will be able to interpret visual elements on web pages, enabling it to bypass common bot-detection mechanisms and analyze rendered page state.
+  </Card>
+  <Card title="Traffic analysis" icon="network">
+    PCAP file parsing. The agent will be able to ingest raw network captures, reconstruct protocol-level interactions, and identify anomalies that are invisible at the HTTP application layer.
+  </Card>
+</CardGroup>
+
+---
+
+## Long-term vision
+
+These items represent research-grade goals beyond the near-term roadmap.
+
+<AccordionGroup>
+  <Accordion title="Collaborative agent network">
+    Multi-agent distributed collaboration: a network of specialized agents operating in parallel — one scanning, one exploiting, one analyzing results — with shared state and coordinated task assignment. This would allow LuaN1aoAgent to scale horizontally across large, complex targets.
+  </Accordion>
+  <Accordion title="Reinforcement learning integration">
+    Autonomous optimization of attack strategies through environmental interaction. Rather than relying solely on LLM priors, agents would refine their decision policies through trial and feedback, achieving strategy convergence in complex scenarios over time.
+  </Accordion>
+  <Accordion title="Compliance report generation">
+    Automatic generation of compliant penetration testing reports. After a task completes, the agent assembles a structured report from the causal graph — listing findings, evidence chains, severity assessments, and remediation guidance — in formats suitable for regulatory and client delivery.
+  </Accordion>
+</AccordionGroup>
+
+<Note>
+  Roadmap items are subject to change. To suggest a feature or follow development, visit [GitHub Issues](https://github.com/SanMuzZzZz/LuaN1aoAgent/issues) or [GitHub Discussions](https://github.com/SanMuzZzZz/LuaN1aoAgent/discussions).
+</Note>

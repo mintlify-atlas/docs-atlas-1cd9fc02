@@ -1,0 +1,146 @@
+---
+title: "Human-in-the-Loop Mode"
+description: "Enable HITL mode to pause agent execution after planning and require human approval before any subtask runs."
+---
+
+Human-in-the-Loop (HITL) mode lets security experts supervise and intervene in the agent's decision-making process. When enabled, the agent pauses after generating each plan (initial or dynamic), waits for human approval, and only proceeds once a decision is received.
+
+## What HITL mode does
+
+Without HITL, the P-E-R cycle runs fully autonomously: the Planner generates graph operations, the Executor runs them, and the Reflector evaluates results in a continuous loop.
+
+With HITL enabled, the cycle inserts a **blocking approval step** after each Planner output:
+
+```
+Planner generates plan
+    ↓
+[PAUSE] Wait for human decision (up to 3600 seconds)
+    ↓
+  Approved → Executor runs subtasks
+  Rejected  → Planner re-plans
+  Modified  → Executor runs the modified plan
+```
+
+The agent registers approval requests in the SQLite database. Both the Web UI and CLI poll for the decision concurrently — whichever receives input first wins.
+
+## Enabling HITL mode
+
+Add the following to your `.env` file:
+
+```ini
+HUMAN_IN_THE_LOOP=true
+```
+
+Alternatively, when creating a task via the Web UI, toggle the **Human-in-the-Loop** switch in the new task dialog — this sets `HUMAN_IN_THE_LOOP=true` in the subprocess environment for that specific task.
+
+<Note>
+HITL is disabled by default (`HUMAN_IN_THE_LOOP=false`). It applies to all tasks started while the setting is active in `.env`.
+</Note>
+
+## Web UI approval flow
+
+The Web UI detects pending approvals via the SSE event stream. When the agent pauses, the frontend receives an `intervention.required` event and automatically opens a modal.
+
+<Steps>
+  <Step title="Approval modal appears">
+    The modal displays the pending plan as a list of graph operations (`ADD_NODE`, `UPDATE_NODE`, `DEPRECATE_NODE`). Each operation shows the node ID, description, and the reason for the change.
+  </Step>
+  <Step title="Review the plan">
+    Read through the proposed operations. Verify that the planned subtasks align with the authorized scope of the engagement.
+  </Step>
+  <Step title="Choose an action">
+    - **Approve** — execute the plan unchanged
+    - **Reject** — discard the plan; the agent will generate a new one
+    - **Modify** — opens the raw plan JSON in an in-browser editor; edit the operations, then submit
+  </Step>
+  <Step title="Submit the decision">
+    The decision is written to the `InterventionModel` table. The agent's polling loop (every 2 seconds) detects the response and proceeds accordingly.
+  </Step>
+</Steps>
+
+## CLI approval flow
+
+For headless or terminal-only usage, the agent concurrently listens for input on `stdin`. The CLI prompt appears in the agent's terminal alongside the Web UI modal.
+
+```
+┌─────────────────────────────────────────────────┐
+│ HITL CLI                                        │
+│ Pending plan (3 ops):                           │
+│  1. ADD_NODE subtask_001: Port scan 192.168.1.0 │
+│  2. ADD_NODE subtask_002: Web service enum      │
+│  3. ADD_NODE subtask_003: Vuln assessment       │
+│                                                 │
+│ y (approve)  n (reject)  m (modify)             │
+└─────────────────────────────────────────────────┘
+HITL > _
+```
+
+| Input | Action |
+|---|---|
+| `y` | Approve the plan as-is |
+| `n` | Reject the plan; agent re-plans |
+| `m` | Open the plan JSON in your `$EDITOR` (defaults to `vim`) for editing, then submit the modified version |
+
+<Note>
+The CLI prompt is only shown in interactive terminal environments (`sys.stdin.isatty()` must return `True`). In non-interactive environments (e.g., Docker with no TTY), only the Web UI approval path is available.
+</Note>
+
+### Parallel decision model
+
+The CLI handler and Web UI poll for decisions concurrently. The `InterventionManager` uses a database-backed approach — whichever channel submits a decision first wins:
+
+```python
+# From core/intervention.py
+async def submit_decision(self, req_id: str, action: str, modified_data: Any = None) -> bool:
+    db_status_map = {
+        "APPROVE": "approved",
+        "REJECT": "rejected",
+        "MODIFY": "modified",
+    }
+    db_status = db_status_map.get(action.upper(), "pending")
+    await update_intervention_response(req_id, db_status, response_data=modified_data)
+```
+
+Once a decision is written to the database, the agent's polling loop picks it up and the CLI task is cancelled (`asyncio.CancelledError`).
+
+## The InterventionManager
+
+`core/intervention.py` exposes a global singleton `intervention_manager` used by both the agent and the web server:
+
+| Method | Called by | Purpose |
+|---|---|---|
+| `request_approval(op_id, data, type)` | Agent | Creates a DB record and blocks (polls every 2 seconds) until a decision arrives or the 3600-second timeout elapses |
+| `get_pending_request(op_id)` | Web server | Returns the current pending request for a given task, if any |
+| `submit_decision(req_id, action, data)` | Web server / CLI | Writes the decision to the DB, unblocking the agent |
+
+If the timeout elapses with no decision, the manager returns `{"action": "REJECT"}` and the agent re-plans. This prevents the agent from hanging indefinitely if the operator steps away.
+
+## Injecting new subtasks
+
+Beyond approving or rejecting plans, the Web UI supports **active intervention**: injecting entirely new subtasks into the running task graph at any time, not just during a plan approval step.
+
+See [Active intervention](/guides/web-ui#active-intervention-injecting-subtasks) in the Web UI guide for instructions.
+
+## Use cases and best practices
+
+<AccordionGroup>
+  <Accordion title="Reviewing high-risk operations">
+    Enable HITL before any engagement against production systems. Review `ADD_NODE` operations to ensure the planned subtasks (especially those invoking `shell_exec` or `sqlmap`) are within the authorized scope before approving.
+  </Accordion>
+
+  <Accordion title="Injecting domain knowledge">
+    Use the **Modify** action to add context the agent lacks. For example, if you know the target uses a specific WAF or has non-standard service ports, edit the plan JSON to include a targeted bypass subtask before approving.
+  </Accordion>
+
+  <Accordion title="Course-correcting stuck runs">
+    If the agent is going in circles (visible in the task graph), reject the plan and use the **Add Task** button to inject a subtask that forces a different approach, such as switching from automated scanning to manual payload testing.
+  </Accordion>
+
+  <Accordion title="Staged engagement control">
+    Run reconnaissance phases autonomously, then enable HITL before the exploitation phase. You can restart a task with HITL enabled mid-engagement by aborting and re-running with the updated `.env`.
+  </Accordion>
+</AccordionGroup>
+
+<Warning>
+HITL mode does not prevent the agent from executing high-risk tools — it only inserts a human checkpoint before each plan phase. Review all planned operations carefully, especially `shell_exec` and `python_exec` subtasks, before approving.
+</Warning>

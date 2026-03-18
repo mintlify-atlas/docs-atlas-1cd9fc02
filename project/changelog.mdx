@@ -1,0 +1,202 @@
+---
+title: "Changelog"
+description: "All notable changes to LuaN1aoAgent, following the Keep a Changelog convention."
+---
+
+<Info>
+  This changelog follows the [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format. Each version links to its corresponding commit on GitHub.
+</Info>
+
+## v0.6.0 — 2026-03-09
+
+### Fixed
+
+- **core**: Fixed a crash caused by the `rich` library's special character parser encountering sequences like `[/]`. ([`bf51e6f`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/bf51e6f))
+
+---
+
+## v0.5.0 — 2026-03-08
+
+### Added
+
+- **core**: Tool timeout configuration, Shared Bulletin Board for real-time cross-subtask finding exchange, and active hypothesis persistence across context compression cycles. ([`42975d5`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/42975d5))
+- **rag**: Chunk overlap support to improve retrieval recall. ([`6d38528`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/6d38528))
+
+### Improved
+
+- **arch / prompts / docs**: Comprehensive overhaul of the overall architecture, prompt templates, and README documentation. ([`c2bfe38`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/c2bfe38))
+
+---
+
+## v0.4.0 — 2026-03-07
+
+### Added
+
+- **prompts**: Updated prompt content. ([`6e69331`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/6e69331))
+- **prompts / core**: CTF-specific optimizations and focus areas; updated node type descriptions and execution principles. ([`cf9a4a9`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/cf9a4a9))
+- **core**: Subtask ID support; improved causal graph command handling and node update timestamp logic. ([`402c87f`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/402c87f))
+- **web**: Updated audit status display logic; optimized status color handling with support for additional status values. ([`362a7b9`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/362a7b9))
+- **core / web**: New task state management system; additional audit status values; configuration options; frontend display and backend logic refinements. ([`7a741a1`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/7a741a1))
+
+---
+
+## v0.3.0 — 2026-03-06
+
+### Fixed
+
+- **agent**: Improved process termination logic; added task state management; updated frontend task status display. ([`7843018`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/7843018))
+
+---
+
+## v0.2.0 — 2026-02-28
+
+### Added
+
+- **prompts / core**: Executor and Planner prompt templates with detailed schema definitions and penetration testing workflow principles. ([`fd682fb`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/fd682fb))
+
+### Fixed
+
+- **data**: Two data-layer bug fixes. ([`cc575f4`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/cc575f4), [`d9cb922`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/d9cb922))
+
+### Docs
+
+- **readme**: Fixed Showcase link formatting. ([`1c296ae`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/1c296ae), [`6a49a5d`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/6a49a5d))
+
+---
+
+## v0.1.0 — 2026-02-26
+
+### Added
+
+- **core / tools**: Enhanced tool chain, resource governance, and cognitive reasoning framework. ([`3a590bc`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/3a590bc))
+
+---
+
+## Older versions
+
+<AccordionGroup>
+  <Accordion title="v0.0.9">
+    ### Fixed
+
+    - **rag**: Fixed relative import path resolution failure. ([`9b14ad2`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/9b14ad2))
+    - **tools**: Fixed `LLMClient` import compatibility issue (two separate commits). ([`6a1d068`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/6a1d068), [`cd4ac83`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/cd4ac83))
+  </Accordion>
+
+  <Accordion title="v0.0.8">
+    ### Added
+
+    - **web**: Left and right sidebar collapse functionality. ([`8328ee6`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/8328ee6))
+
+    ### Fixed
+
+    - **web**: XSS vulnerability — LLM-returned content containing raw HTML tags was being rendered unescaped. Fixed via PR #1. ([`a1cf830`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/a1cf830))
+  </Accordion>
+
+  <Accordion title="v0.0.7">
+    ### Fixed
+
+    - **app**: Root node and execution chain node collapse support. ([`7ee7cee`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/7ee7cee))
+
+    ### Docs
+
+    - **readme**: Updated installation steps; removed stale links. ([`b9cf3dc`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/b9cf3dc))
+  </Accordion>
+
+  <Accordion title="v0.0.6">
+    ### Added
+
+    - **server**: Operation logging. ([`a365535`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/a365535))
+    - **agent**: Session state updates and error handling. ([`3c90d22`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/3c90d22))
+    - **model**: Custom sort field for sessions. ([`b280775`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/b280775))
+
+    ### Build
+
+    - Added project dependency declarations. ([`f5de209`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/f5de209))
+  </Accordion>
+
+  <Accordion title="v0.0.5">
+    ### Added
+
+    - **web**: Task management and rendering improvements; task rename and manual sort order support. ([`8959f8e`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/8959f8e))
+  </Accordion>
+
+  <Accordion title="v0.0.4">
+    ### Docs
+
+    - **readme**: Added demo video. ([`2921236`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/2921236), [`9f15750`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/9f15750))
+  </Accordion>
+
+  <Accordion title="v0.0.3">
+    ### Added
+
+    - **graph**: Placeholder node logic and phase-transition handling. ([`f7a66fe`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/f7a66fe))
+    - **ui**: Replaced confirmation dialogs with a unified modal component. ([`30385ca`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/30385ca))
+    - **database**: Atomic graph data writes. ([`ed01082`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/ed01082))
+
+    ### Style
+
+    - **web**: Homepage title update. ([`fe45fa5`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/fe45fa5))
+  </Accordion>
+
+  <Accordion title="v0.0.2">
+    ### Added
+
+    - **ops**: Drag-to-sort task list. ([`5706730`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/5706730))
+    - **graph / ui**: User-controlled node expand/collapse; double-click to toggle subtask collapse state. ([`8993ec6`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/8993ec6), [`e399c9b`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/e399c9b))
+    - **graph**: Transition animation duration scaled to node count for better rendering performance. ([`cc7b51b`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/cc7b51b))
+    - **graph**: Race condition detection via render task ID tracking. ([`8032e69`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/8032e69))
+    - **agent**: Success node marking; key success steps extracted from subtasks; Reflector output schema update. ([`99d7fe6`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/99d7fe6))
+    - **agent**: Success path highlighting from Planner-designated nodes; frontend log output improvements. ([`fb82011`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/fb82011))
+    - **agent**: Session record creation in the database to support frontend task refresh. ([`43c4e57`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/43c4e57))
+    - **agent**: Successful subtask node marking and success path highlight logic. ([`2623a5c`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/2623a5c))
+    - **ui**: New task creation dialog. ([`7721349`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/7721349))
+
+    ### Refactored
+
+    - **core**: Subtask execution chain persistence mechanism. ([`3a65744`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/3a65744))
+  </Accordion>
+
+  <Accordion title="v0.0.1">
+    ### Added
+
+    - **graph**: Evidence strength classification and update logic; failure mode rendering with competing hypothesis resolution; Reflector evidence strength judgment principles. ([`4b8a11c`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/4b8a11c))
+    - **executor**: Failure mode rendering to improve prompt context. ([`22d113e`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/22d113e))
+    - **reflector**: Reject node logic for causal graph management. ([`2fb8485`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/2fb8485))
+  </Accordion>
+
+  <Accordion title="v0.0.0 — 2025-12-09 to 2025-12-13">
+    Initial project scaffolding: core graph engine, Web UI, and Agent execution framework.
+
+    ### Added
+
+    - **core**: MCP server management; task completion graph state updates. ([`ee0cd7e`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/ee0cd7e))
+    - **planner**: Human-in-the-Loop review for branch replanning; dependency correction. ([`ffae7ae`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/ffae7ae))
+    - **core**: Node completion timestamps and highlight logic. ([`f5933ba`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/f5933ba))
+    - **graph**: Global task completion state and success path highlighting. ([`5269517`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/5269517))
+    - **ui**: Task phase banner display. ([`f021008`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/f021008))
+    - **exec**: Execution path highlighting and UI internationalization. ([`b39909c`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/b39909c))
+    - **graph**: Node sizing by type; current execution path highlight styling. ([`b265c58`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/b265c58))
+    - **graph**: Current execution path highlight; node and edge style improvements. ([`5140dbd`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/5140dbd))
+    - **graph**: Node type handling improvements and detail panel display. ([`a0e161f`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/a0e161f))
+    - **executor**: Task state management and frontend node rendering. ([`1fd5cc7`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/1fd5cc7))
+    - **agent**: Operation ID passing via Web UI for unified task identification. ([`6712f49`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/6712f49))
+    - **intervention**: Enhanced HITL request handling with database integration. ([`32b511f`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/32b511f))
+    - **web**: Web service host address configurable via environment variable. ([`9e8efb2`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/9e8efb2))
+
+    ### Refactored
+
+    - **web**: Task deletion and task status display improvements. ([`0d6179e`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/0d6179e))
+
+    ### Fixed
+
+    - **agent**: Async call and event handling logic. ([`ad659ec`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/ad659ec))
+    - **agent**: Audit status handling normalization. ([`6557fa8`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/6557fa8))
+    - **planner**: Prevented completed task nodes from being incorrectly set to deprecated. ([`e0be529`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/e0be529))
+    - **executor**: Ensured globally unique `step_id` values to avoid node conflicts. ([`2831a96`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/2831a96))
+    - **web**: Fixed blank agent log and abnormal status banner display. ([`3d2a049`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/3d2a049))
+
+    ### Docs
+
+    - **readme**: Added Tencent Cloud Hackathon badge. ([`6dc257a`](https://github.com/SanMuzZzZz/LuaN1aoAgent/commits/6dc257a))
+  </Accordion>
+</AccordionGroup>

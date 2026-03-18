@@ -1,0 +1,186 @@
+---
+title: "Web UI Dashboard"
+description: "Guide to using the LuaN1aoAgent web dashboard for real-time task monitoring, graph visualization, and human intervention."
+---
+
+The LuaN1aoAgent Web UI is a standalone FastAPI application that provides a persistent, database-backed dashboard for monitoring and managing agent tasks. It runs independently from the agent worker and stays alive between runs.
+
+## Architecture
+
+The web server is built on FastAPI and persists all state to a SQLite database (`luan1ao.db`). The frontend communicates with the backend over a combination of REST API calls and Server-Sent Events (SSE) for real-time updates.
+
+```
+Browser  ──────►  FastAPI (web/server.py)  ──────►  luan1ao.db (SQLite)
+                        │
+                        ▼
+               SSE stream per op_id
+               (polls DB every 1 second)
+```
+
+All task graphs, logs, and intervention requests survive web server restarts because they are stored in the database, not in memory.
+
+## Starting the web server
+
+```bash
+python -m web.server
+```
+
+The server starts on **http://localhost:8088** by default. Configure the host and port with environment variables:
+
+```ini
+# .env
+WEB_HOST=0.0.0.0   # bind to all interfaces (e.g., for remote access)
+WEB_PORT=8088
+```
+
+<Warning>
+If you set `WEB_HOST=0.0.0.0`, the dashboard will be accessible on your network. Do not expose it to untrusted networks without authentication.
+</Warning>
+
+## Dashboard features
+
+<CardGroup cols={2}>
+  <Card title="Real-time task graph" icon="diagram-project">
+    Watch the DAG evolve as the Planner adds, deprecates, and completes nodes live.
+  </Card>
+  <Card title="Live log streaming" icon="scroll">
+    Every P-E-R event is streamed to the log panel as it is written to the database.
+  </Card>
+  <Card title="Node detail panel" icon="magnifying-glass">
+    Click any node to view its full execution log, tool outputs, artifacts, and state transition history.
+  </Card>
+  <Card title="Task management" icon="list-check">
+    Create new tasks, abort running tasks, delete historical records, and reorder the task sidebar.
+  </Card>
+</CardGroup>
+
+## Creating a task from the UI
+
+<Steps>
+  <Step title="Open the dashboard">
+    Navigate to **http://localhost:8088** in your browser.
+  </Step>
+  <Step title="Click New Task">
+    Click the **New Task** button in the sidebar. A dialog will appear.
+  </Step>
+  <Step title="Fill in task details">
+    Enter the **Goal** (the penetration testing objective) and an optional **Task Name** for display purposes.
+
+    You can also configure:
+    - **Output mode**: `simple`, `default`, or `debug`
+    - **Human-in-the-Loop**: toggle HITL mode for this task
+    - **LLM models**: override planner, executor, and reflector models per task
+  </Step>
+  <Step title="Submit">
+    Click **Start**. The web server calls `agent.py` in a detached subprocess, passing the generated `op_id` via `--op-id`. The task appears in the sidebar immediately.
+  </Step>
+</Steps>
+
+<Note>
+The web server creates the task database record before spawning the agent subprocess, so the task appears in the UI instantly even before the agent initializes.
+</Note>
+
+## Understanding node states and colors
+
+The task graph visualizes nodes with colors corresponding to their state machine status:
+
+| State | Color | Meaning |
+|---|---|---|
+| `pending` | Gray | Awaiting dependency completion |
+| `in_progress` | Blue | Currently being executed by the Executor |
+| `completed` | Green | Successfully finished; Reflector confirmed goal achieved |
+| `failed` | Red | Executor exhausted steps without success |
+| `deprecated` | Faded | Planner pruned this node (replaced by a better path) |
+| `stalled_orphan` | Orange | Dependency was removed without a replacement |
+
+Node types have distinct visual styles:
+- **Root node** — the overall task goal
+- **Task nodes** — subtasks created by the Planner (displayed with description labels)
+- **Action nodes** — individual tool invocations (execution steps)
+
+## Viewing the causal graph
+
+Switch to the **Causal Graph** tab to see the evidence-hypothesis-vulnerability-exploit chain the agent is building. Each node represents a causal inference:
+
+```
+Evidence (port 3306 open)
+  ↓ SUPPORTS (confidence 0.8)
+Hypothesis (MySQL service running)
+  ↓ VALIDATES
+Vulnerability (weak credentials)
+  ↓ EXPLOITS
+Exploit (mysql -h target -u root)
+```
+
+Click any causal node to see its title, description, confidence score, severity rating, and supporting evidence.
+
+## Viewing node details
+
+Click any node in the execution graph to open the **detail panel** on the right. The panel shows:
+
+- **Description** — the subtask objective
+- **Status** — current state with timestamp
+- **Execution log** — all tool calls and observations for that subtask
+- **Artifacts** — structured findings produced (vulnerabilities, credentials, flags)
+- **Thought** — the Executor's internal reasoning chain
+
+## Managing tasks
+
+### Aborting a running task
+
+Click a task in the sidebar, then click **Abort**. The web server sends `SIGKILL` to the entire process group of the agent subprocess (using `os.killpg`), which also terminates any MCP tool child processes.
+
+### Deleting a historical task
+
+Click the task in the sidebar, then click **Delete**. This removes the `SessionModel` record and all associated graph nodes, edges, and event logs from the SQLite database via cascading delete.
+
+### Reordering tasks
+
+Drag tasks in the sidebar to reorder them. The order is persisted to the database (`sort_index` column on `SessionModel`) and restored on the next page load.
+
+## Active intervention: injecting subtasks
+
+During a running task, you can inject new subtasks directly into the agent's task graph without waiting for the next Planner cycle:
+
+<Steps>
+  <Step title="Open the task">
+    Select the running task in the sidebar.
+  </Step>
+  <Step title="Click Add Task">
+    Click the **Add Task** button in the task detail view.
+  </Step>
+  <Step title="Describe the subtask">
+    Enter the subtask description and optionally specify node IDs this subtask depends on.
+  </Step>
+  <Step title="Submit">
+    The web server creates an `intervention_request` record of type `task_injection`. The agent picks this up during its next planning cycle and adds the node to the task graph.
+  </Step>
+</Steps>
+
+## HITL approval modal
+
+When a task is started with **Human-in-the-Loop** enabled (`HUMAN_IN_THE_LOOP=true`), the agent pauses after generating each plan and waits for human approval before execution begins.
+
+The Web UI detects pending approval requests via the SSE stream (`intervention.required` event) and automatically displays a modal:
+
+- **Approve** — execute the plan as generated
+- **Reject** — discard the plan; the agent will re-plan
+- **Modify** — edit the raw plan JSON in the modal's editor before approving
+
+For full details on HITL mode, see the [Human-in-the-Loop guide](/guides/human-in-the-loop).
+
+## Data persistence
+
+All task data is stored in `luan1ao.db` (SQLite) in the project root. The database is created automatically on first startup. The following tables are used:
+
+| Table | Contents |
+|---|---|
+| `SessionModel` | One row per task: goal, name, status, config |
+| `GraphNodeModel` | Task graph and causal graph nodes |
+| `GraphEdgeModel` | Dependency and causal edges |
+| `EventLogModel` | All P-E-R log events (streamed to the UI) |
+| `InterventionModel` | Pending and resolved HITL/injection requests |
+
+<Tip>
+Back up `luan1ao.db` to preserve task history. The file can be copied while the web server is not running.
+</Tip>

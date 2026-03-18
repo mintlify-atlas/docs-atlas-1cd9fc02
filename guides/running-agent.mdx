@@ -1,0 +1,215 @@
+---
+title: "Running Agent Tasks"
+description: "Complete guide to starting the web server and launching agent penetration testing tasks from the CLI."
+---
+
+LuaN1aoAgent runs as **two separate processes**: a persistent web server (the dashboard) and a short-lived agent worker (the task runner). They communicate through a shared SQLite database (`luan1ao.db`), which means the web UI stays up across task restarts and retains full history.
+
+## Two-process architecture
+
+```
+┌─────────────────────┐         ┌──────────────────────┐
+│   Web Server        │◄───────►│   Agent Worker        │
+│  python -m web.server│  SQLite │  python agent.py ...  │
+│  localhost:8088     │  (DB)   │  exits when done      │
+└─────────────────────┘         └──────────────────────┘
+```
+
+The web server is always-on. The agent is ephemeral — it runs the P-E-R cycle, writes logs and graph state to the database, and exits. The web UI reflects all state changes in real time via Server-Sent Events.
+
+## Starting the web server
+
+Start the dashboard first, before running any agent tasks. Keep this process running in its own terminal.
+
+```bash
+python -m web.server
+```
+
+Open your browser at **http://localhost:8088** to access the dashboard.
+
+<Tip>
+The web server binds to `127.0.0.1:8088` by default. Override with the `WEB_HOST` and `WEB_PORT` environment variables in your `.env` file.
+</Tip>
+
+## Running agent tasks
+
+### Basic usage
+
+Open a **new terminal window** (keep the web server running), then launch an agent task:
+
+```bash
+python agent.py \
+    --goal "Perform comprehensive web security testing on http://testphp.vulnweb.com" \
+    --task-name "demo_test"
+```
+
+The agent exits when the task completes. All state, logs, and graph data are written to the SQLite database and visible in the Web UI in real time.
+
+### Printing the task URL
+
+Pass `--web` to have the agent print the direct URL to the task in the Web UI:
+
+```bash
+python agent.py \
+    --goal "Scan localhost" \
+    --task-name "local_scan" \
+    --web
+```
+
+## CLI reference
+
+All arguments from `agent.py`'s argparse configuration:
+
+<AccordionGroup>
+  <Accordion title="Core arguments">
+    | Argument | Required | Default | Description |
+    |---|---|---|---|
+    | `--goal` | Yes | — | The penetration testing objective for the agent |
+    | `--task-name` | No | `default_task` | Task name used for logging and directory naming |
+    | `--log-dir` | No | `logs/<task-name>/<timestamp>/` | Override the default log output directory |
+    | `--op-id` | No | auto-generated | Operation ID passed by the Web UI when creating tasks via the dashboard |
+  </Accordion>
+
+  <Accordion title="LLM configuration">
+    These flags override the corresponding `.env` values for a single run.
+
+    | Argument | Env equivalent | Description |
+    |---|---|---|
+    | `--llm-api-base-url` | `LLM_API_BASE_URL` | Base URL for the LLM API |
+    | `--llm-api-key` | `LLM_API_KEY` | API key for the LLM service |
+    | `--llm-planner-model` | `LLM_PLANNER_MODEL` | Model for the Planner role |
+    | `--llm-executor-model` | `LLM_EXECUTOR_MODEL` | Model for the Executor role |
+    | `--llm-reflector-model` | `LLM_REFLECTOR_MODEL` | Model for the Reflector role |
+    | `--llm-default-model` | `LLM_DEFAULT_MODEL` | Fallback model for other roles |
+    | `--llm-expert-model` | `LLM_EXPERT_MODEL` | Model for the Expert Analysis role |
+  </Accordion>
+
+  <Accordion title="Output and display">
+    | Argument | Default | Description |
+    |---|---|---|
+    | `--output-mode` | `default` | Console verbosity: `simple`, `default`, or `debug` |
+    | `--web` | `false` | Print the Web UI task URL after the agent starts |
+    | `--web-port` | `8088` | Web service port (display purposes only; does not start a server) |
+  </Accordion>
+
+  <Accordion title="Execution modes">
+    | Argument | Value | Description |
+    |---|---|---|
+    | `--mode` | `default` | Standard P-E-R architecture (Planner + Executor + Reflector) |
+    | `--mode` | `linear` | Linear task chain without dynamic graph branching |
+    | `--mode` | `react` | Pure ReAct mode — bypasses the P-E-R architecture and runs a single Executor loop with up to 50 steps |
+  </Accordion>
+</AccordionGroup>
+
+## Example commands
+
+<Tabs>
+  <Tab title="Web security testing">
+    ```bash
+    python agent.py \
+        --goal "Perform comprehensive web security testing on http://testphp.vulnweb.com. Identify SQL injection, XSS, and authentication vulnerabilities." \
+        --task-name "web_pentest" \
+        --output-mode debug
+    ```
+  </Tab>
+  <Tab title="CTF challenge solving">
+    ```bash
+    python agent.py \
+        --goal "Solve the CTF challenge at http://ctf.example.com:8080. Find and submit the flag in flag{...} format." \
+        --task-name "ctf_challenge" \
+        --mode default
+    ```
+
+    <Tip>
+      Set `SCENARIO_MODE=ctf` in your `.env` to activate CTF-specific prompt optimizations that focus on flag extraction rather than broad scanning.
+    </Tip>
+  </Tab>
+  <Tab title="Network penetration testing">
+    ```bash
+    python agent.py \
+        --goal "Perform network penetration testing on 192.168.1.0/24. Identify open services, enumerate users, and attempt privilege escalation." \
+        --task-name "network_pentest" \
+        --llm-planner-model gpt-4o \
+        --llm-executor-model gpt-4o \
+        --web
+    ```
+  </Tab>
+  <Tab title="Override models per-run">
+    ```bash
+    python agent.py \
+        --goal "Test http://target.local for authentication bypass vulnerabilities." \
+        --task-name "auth_bypass_test" \
+        --llm-api-base-url https://api.openai.com/v1 \
+        --llm-api-key sk-your-key-here \
+        --llm-planner-model gpt-4o \
+        --llm-executor-model gpt-4o \
+        --llm-reflector-model gpt-4o
+    ```
+  </Tab>
+</Tabs>
+
+## Understanding log output
+
+During execution, the agent prints a structured Rich-formatted console output. The verbosity depends on `--output-mode`:
+
+| Mode | What you see |
+|---|---|
+| `simple` | Core task progress only |
+| `default` | Standard P-E-R cycle information and tool calls |
+| `debug` | Full LLM prompt/response details and all internal state |
+
+## Log file structure
+
+Every run saves logs to `logs/<task-name>/<timestamp>/`:
+
+```
+logs/demo_test/20250204_120000/
+├── run_log.json          # Complete execution log (all P-E-R interactions)
+├── metrics.json          # Performance metrics and token usage statistics
+└── console_output.log    # Formatted console output
+```
+
+### Reading `metrics.json`
+
+`metrics.json` contains aggregated statistics for the entire run:
+
+```json
+{
+    "task_name": "demo_test",
+    "start_time": 1738666800.0,
+    "end_time": 1738667200.0,
+    "total_time_seconds": 400.0,
+    "total_tokens": 85000,
+    "prompt_tokens": 70000,
+    "completion_tokens": 15000,
+    "cost_cny": 0.09,
+    "execution_steps": 42,
+    "plan_steps": 8,
+    "reflect_steps": 6,
+    "tool_calls": {
+        "http_request": 15,
+        "shell_exec": 12,
+        "think": 8
+    },
+    "success": true
+}
+```
+
+Key fields:
+- `cost_cny` — total LLM API cost in CNY
+- `tool_calls` — per-tool invocation counts across the entire run
+- `total_tokens` — sum of prompt and completion tokens consumed
+
+### Reading `run_log.json`
+
+`run_log.json` is an ordered list of all P-E-R events. Each entry records the role (planner, executor, reflector), the subtask ID, and the full input/output for that step. This is the primary file for post-hoc analysis and debugging.
+
+## Stopping a running task
+
+**Via the Web UI**: Click the task in the sidebar, then click the **Abort** button. This sends `SIGKILL` to the agent process group, including all MCP tool subprocesses.
+
+**Via the terminal**: Press `Ctrl+C` in the terminal where the agent is running. The agent registers a `SIGTERM` handler that triggers a graceful shutdown and ensures logs are saved via the `finally` block.
+
+<Warning>
+If you kill the agent with `SIGKILL` directly (e.g., `kill -9`), the final `metrics.json` snapshot may be incomplete. Prefer `Ctrl+C` or the Web UI abort button for clean termination.
+</Warning>

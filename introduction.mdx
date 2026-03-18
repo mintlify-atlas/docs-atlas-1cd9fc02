@@ -1,0 +1,190 @@
+---
+title: "Introduction"
+description: "LuaN1aoAgent is a fully autonomous AI penetration testing agent that simulates expert-level security reasoning through the P-E-R architecture, Causal Graph Reasoning, and Plan-on-Graph task planning."
+---
+
+**LuaN1aoAgent (鸾鸟)** is a next-generation autonomous penetration testing agent powered by Large Language Models. Named after the _luanniao_ — a mythical phoenix bird of Chinese legend — it brings intelligent, adaptive reasoning to security testing.
+
+Unlike traditional scanners that depend on predefined rule sets, LuaN1ao simulates how human security experts think: it builds hypotheses from evidence, plans attack paths as dynamic graphs, executes targeted actions, and learns from failures — all autonomously.
+
+<Note>
+LuaN1aoAgent achieves a **90.4% success rate** on the XBOW benchmark fully autonomously, with a median exploit cost of only **$0.09**.
+</Note>
+
+## The problem with traditional scanners
+
+Conventional automated tools have fundamental limitations:
+
+- **Rigid rule sets**: They can only find vulnerabilities they were explicitly programmed to detect.
+- **No context awareness**: Each scan is stateless — findings from one check don't inform the next.
+- **No adaptive planning**: When a path is blocked (e.g., WAF, rate limiting), the tool stops rather than pivoting.
+- **High false-positive rates**: Scanners report everything they find without reasoning about likelihood or impact.
+- **No learning**: Every run starts from scratch with no memory of what worked or failed before.
+
+LuaN1ao addresses all of these by modeling penetration testing as a _cognitive loop_ rather than a checklist.
+
+## Core innovations
+
+<CardGroup cols={3}>
+  <Card title="P-E-R Architecture" icon="arrows-spin">
+    Three specialized agents — Planner, Executor, and Reflector — collaborate via an event bus. Each focuses on its core role, eliminating the "split personality" problem of single-agent systems.
+  </Card>
+  <Card title="Causal Graph Reasoning" icon="diagram-project">
+    Every hypothesis requires explicit evidence support. The agent builds rigorous Evidence → Hypothesis → Vulnerability → Exploit chains with confidence scores to prevent hallucinated attacks.
+  </Card>
+  <Card title="Plan-on-Graph (PoG)" icon="network-wired">
+    Tasks are modeled as dynamically evolving Directed Acyclic Graphs (DAGs), enabling parallel execution, real-time path adaptation, and automatic dependency management.
+  </Card>
+</CardGroup>
+
+### P-E-R agent collaboration framework
+
+LuaN1ao decouples penetration testing thinking into three independent but collaborative cognitive roles:
+
+**Planner** — the strategic brain
+- Performs dynamic planning based on global graph awareness
+- Identifies dead ends and automatically generates alternative paths
+- Outputs structured graph editing instructions (`ADD_NODE`, `UPDATE_NODE`, `DEPRECATE_NODE`) rather than natural language
+- Automatically identifies parallelizable tasks based on topological dependencies
+- Allocates adaptive step counts (`max_steps`) per subtask based on complexity
+
+**Executor** — the tactical engine
+- Focuses on single sub-task tool invocation and result analysis
+- Schedules security tools via MCP (Model Context Protocol)
+- Manages intelligent message history compression to avoid token overflow
+- Preserves hypotheses from `formulate_hypotheses` across context compression boundaries
+- Shares high-value findings across parallel subtasks in real-time via a shared bulletin board
+
+**Reflector** — the audit layer
+- Reviews task execution and validates artifact effectiveness
+- Performs L1–L4 level failure pattern analysis to prevent repeated errors
+- Extracts attack intelligence and builds knowledge accumulation
+- Controls termination: determines whether the goal has been achieved or the task is trapped
+
+Role separation avoids the "split personality" problem where a single agent must simultaneously plan, act, and evaluate — all three of which require conflicting cognitive stances.
+
+### Causal graph reasoning
+
+LuaN1ao rejects blind guessing and LLM hallucinations. Every test decision is grounded in explicit causal chains:
+
+```
+Evidence: Port scan discovers 3306/tcp open
+  ↓ (Confidence 0.8)
+Hypothesis: Target runs MySQL service
+  ↓ (Validation successful)
+Vulnerability: MySQL weak password / unauthorized access
+  ↓ (Attempt exploitation)
+Exploit: mysql -h target -u root -p [brute-force / empty password]
+```
+
+Core principles:
+
+- **Evidence first**: Any hypothesis requires explicit prior evidence support
+- **Confidence quantification**: Each causal edge carries a numeric confidence score
+- **Traceability**: Complete reasoning chains are recorded for failure tracing and experience reuse
+- **Hallucination prevention**: Mandatory evidence validation rejects unfounded attack attempts
+
+### Plan-on-Graph dynamic task planning
+
+Rather than a static task list, LuaN1ao models penetration testing plans as dynamically evolving Directed Acyclic Graphs (DAGs):
+
+| Feature | Traditional task list | Plan-on-Graph |
+|---|---|---|
+| Structure | Linear list | Directed graph |
+| Dependency management | Manual sorting | Topological auto-sorting |
+| Parallel execution | None | Auto-identifies parallel paths |
+| Dynamic adjustment | Full regeneration | Local graph editing |
+| Visualization | Difficult | Native Web UI support |
+
+The graph deforms in real-time as testing progresses: discovering new ports automatically mounts service scanning subgraphs, encountering a WAF inserts bypass strategy nodes, and blocked paths trigger automatic pruning or branching.
+
+## System requirements
+
+| Component | Requirement | Notes |
+|---|---|---|
+| **Operating system** | Linux (recommended) / macOS / Windows (WSL2) | Run in an isolated environment |
+| **Python** | 3.10+ | Requires `asyncio` and type hints support |
+| **LLM API** | OpenAI-compatible format | Supports GPT-4o, DeepSeek, Claude, and others |
+| **Memory** | Minimum 4 GB, recommended 8 GB+ | RAG services and LLM inference require memory |
+| **Network** | Internet connection | Required for LLM API access and knowledge base setup |
+
+<Warning>
+LuaN1aoAgent includes high-privilege tools: `shell_exec` and `python_exec`. **Run in a Docker container or virtual machine.** Do not run against systems you don't own or have explicit written authorization to test.
+</Warning>
+
+## Architecture overview
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                  User Goal                              │
+│            "Perform comprehensive penetration testing"   │
+└────────────────────────┬────────────────────────────────┘
+                         ▼
+┌─────────────────────────────────────────────────────────┐
+│              P-E-R Cognitive Layer                      │
+│  ┌──────────┐      ┌──────────┐      ┌──────────┐      │
+│  │ Planner  │ ───> │ Executor │ ───> │Reflector │      │
+│  │          │      │          │      │          │      │
+│  └──────────┘      └──────────┘      └──────────┘      │
+│       │                  │                  │            │
+│       └──────────────────┴──────────────────┘            │
+│                         ▲                                │
+│                         │  LLM API Calls                  │
+└─────────────────────────┼────────────────────────────────┘
+                          │
+┌─────────────────────────┴────────────────────────────────┐
+│               Core Engine                               │
+│  ┌────────────────────────────────────────────────┐     │
+│  │ GraphManager                                   │     │
+│  │ • Task Graph Management (DAG)                  │     │
+│  │ • State Tracking and Updates                   │     │
+│  │ • Topological Sorting and Dependency Resolution│     │
+│  │ • Parallel Task Scheduling                     │     │
+│  │ • Shared Bulletin Board (shared_findings)      │     │
+│  │ • Causal Graph Tiered Storage                  │     │
+│  └────────────────────────────────────────────────┘     │
+│  ┌────────────────────────────────────────────────┐     │
+│  │ Database Layer (SQLite)                        │     │
+│  │ • Persistence for Tasks, Graphs, Logs          │     │
+│  │ • Decoupled State Management                   │     │
+│  └────────────────────────────────────────────────┘     │
+│  ┌────────────────────────────────────────────────┐     │
+│  │ EventBroker (Global)                           │     │
+│  │ • Inter-component Communication                │     │
+│  │ • Event Publishing/Subscription                │     │
+│  └────────────────────────────────────────────────┘     │
+└─────────────────────────┬────────────────────────────────┘
+                          │
+┌─────────────────────────┴────────────────────────────────┐
+│            Capability Layer                              │
+│  ┌────────────────────┐  ┌──────────────────────────┐   │
+│  │ RAG Knowledge      │  │ MCP Tool Server          │   │
+│  │ Service            │  │                          │   │
+│  │ • FAISS vector     │  │ • http_request           │   │
+│  │   retrieval        │  │ • shell_exec             │   │
+│  │ • Document parsing │  │ • python_exec            │   │
+│  │ • Similarity search│  │ • think / formulate_hyp. │   │
+│  └────────────────────┘  │ • halt_task              │   │
+│                          │ • query_causal_graph     │   │
+│                          └──────────────────────────┘   │
+└──────────────────────────────────────────────────────────┘
+```
+
+The system runs as two separate processes: the **Web Server** provides a persistent real-time dashboard, and the **Agent** executes tasks and writes results to a shared SQLite database (`luan1ao.db`). This decoupled architecture means you can monitor multiple past and present tasks from a single interface.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Run your first penetration testing task in under 10 minutes.
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    Detailed setup instructions including virtual environments, Docker, and troubleshooting.
+  </Card>
+  <Card title="P-E-R architecture" icon="arrows-spin" href="/concepts/per-architecture">
+    Deep dive into how Planner, Executor, and Reflector collaborate.
+  </Card>
+  <Card title="Causal graph reasoning" icon="diagram-project" href="/concepts/causal-graph-reasoning">
+    Understand how evidence-driven decisions prevent hallucinated attacks.
+  </Card>
+</CardGroup>

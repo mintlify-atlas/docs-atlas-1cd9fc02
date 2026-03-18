@@ -1,0 +1,207 @@
+---
+title: "Knowledge Base Setup"
+description: "Set up the RAG knowledge base with PayloadsAllTheThings, build the FAISS vector index, and start the knowledge service."
+---
+
+LuaN1aoAgent uses a Retrieval-Augmented Generation (RAG) system to provide the Executor with domain-specific attack payloads, bypass techniques, and vulnerability exploitation methods during task execution. Without the knowledge base, the agent relies solely on the LLM's parametric knowledge.
+
+## Why the knowledge base matters
+
+During execution, the Executor can call the `retrieve_knowledge` MCP tool to fetch relevant techniques for a specific attack scenario — for example, retrieving SQL injection payloads for a specific database, or WAF bypass sequences for a detected firewall product. The knowledge service returns semantically ranked results from a FAISS vector index built from your local documents.
+
+The agent also uses the `distill_knowledge` tool to write new attack insights discovered during a task back into the knowledge base, enabling accumulation of custom intelligence over time.
+
+## Step 1: Set up PayloadsAllTheThings
+
+The recommended starter knowledge base is [PayloadsAllTheThings](https://github.com/swisskyrepo/PayloadsAllTheThings), which contains a comprehensive set of attack payloads organized by vulnerability type.
+
+```bash
+mkdir -p knowledge_base
+git clone https://github.com/swisskyrepo/PayloadsAllTheThings \
+    knowledge_base/PayloadsAllTheThings
+```
+
+The knowledge base directory is at `<project_root>/knowledge_base/`. You can add any number of subdirectories with `.md` or `.txt` files — all will be indexed.
+
+## Step 2: Build the vector index
+
+Run the knowledge base preparer to scan documents, chunk them, generate embeddings, and write the FAISS index:
+
+```bash
+cd rag
+python -m rag_kdprepare
+```
+
+This takes a few minutes on first run, depending on your hardware and the size of the knowledge base. Subsequent runs are incremental — only new or modified files are re-vectorized.
+
+<Tip>
+The preparer checks file hashes (SHA-256) to detect changes. If a document has not changed since the last run, it is skipped entirely.
+</Tip>
+
+### What `rag_kdprepare` does
+
+<Steps>
+  <Step title="Scan the knowledge_base directory">
+    Walks `knowledge_base/` recursively, collecting all `.md` and `.txt` files. Each file is assigned a stable `doc_id` based on its relative path from the project root.
+  </Step>
+  <Step title="Detect new and modified documents">
+    Compares SHA-256 hashes against `rag/faiss_db/faiss_manifest.json`. Documents whose hash has changed or that are new are queued for processing. Documents that no longer exist are removed from the index.
+  </Step>
+  <Step title="Chunk documents">
+    Passes each document through `MarkdownChunker`, which splits content into chunks respecting Markdown headings. Chunk sizes are controlled by environment variables:
+
+    ```ini
+    RAG_MIN_CHUNK_SIZE=100    # minimum characters per chunk
+    RAG_MAX_CHUNK_SIZE=1000   # maximum characters per chunk
+    ```
+  </Step>
+  <Step title="Generate embeddings">
+    Encodes chunks using a SentenceTransformer model (loaded from `rag/models/all-MiniLM-L6-v2` if available locally). Falls back to an offline hash-based embedder (`OfflineHasherEmbedder`, 384 dimensions) if the model cannot be loaded.
+  </Step>
+  <Step title="Write to FAISS index">
+    Adds normalized vectors to a `faiss.IndexIDMap2` wrapping a `faiss.IndexFlatIP` (inner product = cosine similarity). Persists the index and document store:
+
+    ```
+    rag/faiss_db/
+    ├── kb.faiss              # FAISS vector index
+    ├── kb_store.json         # chunk text and metadata
+    └── faiss_manifest.json   # document hash manifest
+    ```
+  </Step>
+</Steps>
+
+### Force-rebuilding the index
+
+To force a full rebuild of the entire index:
+
+```bash
+cd rag
+python -m rag_kdprepare --force-all
+```
+
+To force rebuilding only documents matching a specific pattern:
+
+```bash
+python -m rag_kdprepare --force-doc=SQLInjection
+```
+
+Both flags are also available as environment variables:
+
+```bash
+RAG_FORCE_ALL=true python -m rag_kdprepare
+RAG_FORCE_DOCS=SQLInjection,XSS python -m rag_kdprepare
+```
+
+## Step 3: Start the knowledge service
+
+The knowledge service is a FastAPI application that exposes the FAISS index over HTTP:
+
+```bash
+python -m uvicorn rag.knowledge_service:app --port 8081
+```
+
+The service loads the FAISS index on startup and responds to semantic retrieval queries.
+
+### Auto-start behavior
+
+The agent automatically starts the knowledge service if it is not already running when a task begins. The `KnowledgeServiceManager` in `agent.py`:
+
+1. Checks `GET /health` on `http://127.0.0.1:8081`
+2. If the service is not healthy, spawns a `uvicorn` subprocess with `start_new_session=True`
+3. Polls health every 500ms for up to 5 seconds
+4. Proceeds with the task if the service becomes healthy; logs a warning if it times out
+
+<Note>
+The auto-started knowledge service process is detached from the agent. It continues running after the agent exits. On the next run, the health check will detect it is already running and skip the startup step.
+</Note>
+
+### Health check
+
+Verify the knowledge service is running and the index is loaded:
+
+```bash
+curl http://localhost:8081/health
+```
+
+Expected response:
+
+```json
+{
+    "status": "healthy",
+    "knowledge_base": {
+        "status": "healthy",
+        "total_chunks": 4821
+    }
+}
+```
+
+If `status` is `"unavailable"`, the FAISS index was not found or failed to load. Re-run `rag_kdprepare`.
+
+## Adding custom knowledge documents
+
+Place any `.md` or `.txt` files anywhere under `knowledge_base/` and re-run `rag_kdprepare`. The preparer scans the entire directory tree, so subdirectory organization is up to you:
+
+```
+knowledge_base/
+├── PayloadsAllTheThings/    # upstream knowledge base
+│   ├── SQL Injection/
+│   ├── XSS Injection/
+│   └── ...
+└── custom/                  # your organization's techniques
+    ├── internal-targets.md
+    ├── waf-bypass-notes.md
+    └── custom-payloads.txt
+```
+
+## The `retrieve_knowledge` and `distill_knowledge` tools
+
+During task execution, the Executor can invoke these tools via MCP:
+
+<AccordionGroup>
+  <Accordion title="retrieve_knowledge">
+    Performs a semantic similarity search against the FAISS index and returns the top-k most relevant chunks.
+
+    **Example query** (invoked internally by the agent):
+    ```json
+    {
+      "query": "MySQL blind SQL injection time-based payload",
+      "top_k": 5
+    }
+    ```
+
+    **Response**:
+    ```json
+    {
+      "success": true,
+      "query": "MySQL blind SQL injection time-based payload",
+      "total_results": 5,
+      "results": [
+        {
+          "text": "' AND SLEEP(5)--\n' AND (SELECT * FROM ...",
+          "meta": { "type": "code_block", "doc_id": "knowledge_base/PayloadsAllTheThings/SQL Injection/..." }
+        }
+      ]
+    }
+    ```
+
+    Timeout: 15 seconds (configurable via `TOOL_TIMEOUT_RETRIEVE` in `.env`).
+  </Accordion>
+
+  <Accordion title="distill_knowledge">
+    Writes new attack insights discovered during a task back into the knowledge base as a custom document. This enables the agent to accumulate intelligence across runs.
+
+    Timeout: 20 seconds (configurable via `TOOL_TIMEOUT_DISTILL` in `.env`).
+  </Accordion>
+</AccordionGroup>
+
+## Configuring the knowledge service port
+
+The default port is `8081`. Override it in `.env`:
+
+```ini
+KNOWLEDGE_SERVICE_PORT=8081
+KNOWLEDGE_SERVICE_HOST=127.0.0.1
+KNOWLEDGE_SERVICE_URL=http://127.0.0.1:8081
+```
+
+If you change the port, update all three variables to keep them consistent. The agent reads `KNOWLEDGE_SERVICE_URL` to determine where to send health checks and tool requests.

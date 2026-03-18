@@ -1,0 +1,141 @@
+---
+title: "Output Modes"
+description: "Control console verbosity and prompt language with OUTPUT_MODE and PROMPT_LANGUAGE."
+---
+
+LuaN1aoAgent provides three console output modes and a prompt language switch. These settings affect what you see in the terminal during a run — they do not change the agent's behaviour or the content of log files.
+
+---
+
+## Setting the output mode
+
+<Tabs>
+  <Tab title="Environment variable">
+    ```bash .env
+    # "simple", "default", or "debug"
+    OUTPUT_MODE=default
+    ```
+  </Tab>
+  <Tab title="CLI flag">
+    ```bash
+    python agent.py --output-mode debug --target http://example.com
+    ```
+
+    The `--output-mode` flag overrides the environment variable for that run.
+  </Tab>
+</Tabs>
+
+---
+
+## Mode comparison
+
+| | `simple` | `default` | `debug` |
+|---|:---:|:---:|:---:|
+| Final result / flag | Yes | Yes | Yes |
+| Task plan summary | No | Yes | Yes |
+| Per-step tool calls | No | Yes | Yes |
+| Tool outputs (truncated) | No | Yes | Yes |
+| Reflector analysis | No | No | Yes |
+| Causal graph updates | No | No | Yes |
+| LLM request / response payloads | No | No | Yes |
+| Token usage per call | No | No | Yes |
+| Full tool stdout (untruncated) | No | No | Yes |
+
+---
+
+## `simple`
+
+Minimal output — only the final result or captured flag is printed. Suitable for automated pipelines, CI environments, or batch runs where you only care about the outcome.
+
+```bash
+OUTPUT_MODE=simple python agent.py --target http://192.168.1.10
+```
+
+Example output:
+
+```
+[+] Mission complete
+Flag: CTF{3xf1ltr4t3d_s3cr3t}
+```
+
+---
+
+## `default`
+
+Standard output for interactive use. Shows the current task plan, each executor step, tool names and arguments, truncated tool outputs, and a brief summary at the end of each P-E-R cycle. This is the recommended mode for most users.
+
+```bash
+OUTPUT_MODE=default python agent.py --target http://192.168.1.10
+```
+
+Example output:
+
+```
+[Planner] Building task graph...
+[Task 1] Enumerate web directories
+  [Step 1] dirsearch_scan(url="http://192.168.1.10", extensions="php,html")
+  [Output]  200 /admin/login.php
+           200 /backup/db.sql
+[Reflector] Updating causal graph...
+[+] Cycle 1 complete. 2 new artifacts.
+```
+
+---
+
+## `debug`
+
+Verbose output equivalent to `--verbose`. Prints everything `default` shows plus full LLM request/response payloads, token usage per API call, reflector causal graph diffs, and untruncated tool output. Use this when diagnosing unexpected agent behaviour.
+
+```bash
+OUTPUT_MODE=debug python agent.py --target http://192.168.1.10
+```
+
+<Warning>
+  Debug mode can produce very large amounts of output for long runs. Consider redirecting to a file:
+
+  ```bash
+  OUTPUT_MODE=debug python agent.py --target http://192.168.1.10 2>&1 | tee run.log
+  ```
+</Warning>
+
+---
+
+## Prompt language
+
+`PROMPT_LANGUAGE` controls the language used in all internal agent prompts — system messages, planning instructions, and reflector directives sent to the LLM.
+
+```bash .env
+# "zh" (Chinese, default) or "en" (English)
+PROMPT_LANGUAGE=en
+```
+
+| Value | Description |
+|---|---|
+| `zh` | Chinese prompts (default). Used in the original research and benchmarks. |
+| `en` | English prompts. |
+
+<Note>
+  `PROMPT_LANGUAGE` affects the language of the prompts sent *to* the LLM, not the language of console output or log files. Tool output and LLM responses will still appear in whatever language the model produces.
+</Note>
+
+<Tip>
+  If you are using a model that performs better in English (e.g., GPT-4o, Claude), set `PROMPT_LANGUAGE=en`. For models fine-tuned on Chinese data (e.g., some DeepSeek variants), the default `zh` may yield better results.
+</Tip>
+
+---
+
+## Log files
+
+Console output mode does not affect file logging. Logs are always written at full verbosity to the `logs/` directory:
+
+| File | Contents |
+|---|---|
+| `logs/mcp_service.log` | MCP server tool execution events |
+| `logs/agent_*.log` | Per-run agent trace (created at run start) |
+
+To adjust the log level for file output, set the `LOG_LEVEL` environment variable:
+
+```bash .env
+# DEBUG, INFO, WARNING, ERROR
+LOG_LEVEL=INFO
+```
