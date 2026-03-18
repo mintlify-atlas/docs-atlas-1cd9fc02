@@ -1,0 +1,97 @@
+{
+  "projectType": "ai-ml",
+  "projectName": "LuaN1aoAgent",
+  "projectDescription": "LuaN1aoAgent is a fully autonomous AI penetration testing agent powered by LLMs, using a P-E-R (Planner-Executor-Reflector) architecture and dual-graph causal reasoning to achieve over 90% success rate on the XBOW benchmark.",
+  "theme": "aspen",
+  "primaryColor": "#94cb04",
+  "lightColor": "#545454",
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/per-architecture",
+              "concepts/causal-graph-reasoning",
+              "concepts/plan-on-graph",
+              "concepts/rag-knowledge"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/environment-variables",
+              "configuration/llm-providers",
+              "configuration/mcp-tools",
+              "configuration/output-modes"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/running-agent",
+              "guides/web-ui",
+              "guides/human-in-the-loop",
+              "guides/knowledge-base-setup",
+              "guides/docker-deployment"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "reference/tools",
+              "reference/cli",
+              "reference/execution-modes",
+              "reference/logs-and-metrics"
+            ]
+          },
+          {
+            "group": "Project",
+            "pages": [
+              "project/benchmark-results",
+              "project/roadmap",
+              "project/changelog",
+              "project/contributing",
+              "project/security-disclaimer"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "P-E-R (Planner-Executor-Reflector) agent collaboration framework with role separation",
+    "Causal graph reasoning with Evidence-Hypothesis-Validation logical chains",
+    "Plan-on-Graph (PoG) dynamic DAG-based task planning with topological dependency management",
+    "Parallel subtask scheduling with shared bulletin board for real-time finding exchange",
+    "MCP (Model Context Protocol) unified tool integration layer",
+    "RAG knowledge enhancement using FAISS vector search and PayloadsAllTheThings",
+    "Human-in-the-Loop (HITL) mode with Web UI and CLI approval flows",
+    "Real-time web dashboard with SQLite persistence for task monitoring",
+    "90.4% success rate on XBOW benchmark with $0.09 median exploit cost",
+    "Multi-LLM provider support: OpenAI-compatible APIs and Anthropic Claude"
+  ],
+  "publicApiSurface": [
+    "agent.py --goal <goal> --task-name <name> (main entry point)",
+    "python -m web.server (standalone web dashboard)",
+    "python -m rag.rag_kdprepare (build knowledge base index)",
+    "mcp tools: http_request, shell_exec, python_exec, think, formulate_hypotheses, reflect_on_failure, expert_analysis, retrieve_knowledge, distill_knowledge, web_search, sqlmap_tool, dirsearch_scan, concurrency_test, complete_mission, halt_task, query_causal_graph",
+    "core.planner.Planner (P-E-R Planner component)",
+    "core.executor.run_executor_cycle (P-E-R Executor component)",
+    "core.reflector.Reflector (P-E-R Reflector component)",
+    "core.graph_manager.GraphManager (task DAG and causal graph manager)",
+    "llm.llm_client.LLMClient (unified LLM abstraction layer)",
+    "rag.knowledge_service (FastAPI RAG service on port 8081)"
+  ]
+}
